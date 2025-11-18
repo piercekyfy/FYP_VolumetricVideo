@@ -1,1 +1,3 @@
-add_subdirectory(main)
+add_subdirectory(glshared)
+
+add_subdirectory(pointcloud)
