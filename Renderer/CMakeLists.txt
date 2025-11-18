@@ -25,8 +25,8 @@ function(copy_rel_dir TARGET_NAME SOURCE_DIR)
 
 	add_custom_target(${CUSTOM_TARGET_NAME} ALL
 		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-			"${CMAKE_CURRENT_SOURCE_DIR}/shaders"
-			"$<TARGET_FILE_DIR:${TARGET_NAME}>/shaders"
+			"${CMAKE_CURRENT_SOURCE_DIR}/${SOURCE_DIR}"
+			"$<TARGET_FILE_DIR:${TARGET_NAME}>/${SOURCE_DIR}"
 		COMMENT "[${TARGET_NAME}] COPY ${SOURCE_DIR}"
 	)
 endfunction()
@@ -55,6 +55,11 @@ set(OpenCV_DLLS_DIR ${OpenCV_DIR}/x64/vc17/bin)
 
 find_package(OpenCV REQUIRED)
 
+# nlohmann/json
+
+FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
+FetchContent_MakeAvailable(json)
+
 function(copy_opencv_dlls TARGET_NAME)
 	string(JOIN ".*|" LIB_SEARCH_STR ${ARGN})
 	set(LIB_SEARCH_STR "(${LIB_SEARCH_STR}).*")
@@ -62,7 +67,6 @@ function(copy_opencv_dlls TARGET_NAME)
 	file(GLOB DLLS "${OpenCV_DLLS_DIR}/*.dll")
 	foreach(DLL ${DLLS})
 		get_filename_component(DLL_NAME "${DLL}" NAME_WE)
-		message(STATUS "${DLL_NAME}")
 		if(DLL_NAME MATCHES ${LIB_SEARCH_STR})
 			add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
 				COMMAND ${CMAKE_COMMAND} -E copy_if_different

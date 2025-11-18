@@ -16,7 +16,7 @@ for file in files:
     config.enable_device_from_file(file, repeat_playback=False)
     profile = pipeline.start(config)
     windows.append(profile.get_device().get_info(rs.camera_info.serial_number))
-    profile.get_device().as_playback().set_real_time(False)
+    profile.get_device().as_playback().set_real_time(True)
     pipelines.append(pipeline)
 
 colorizer = rs.colorizer()

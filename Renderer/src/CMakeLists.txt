@@ -1,3 +1,5 @@
 add_subdirectory(glshared)
 
 add_subdirectory(pointcloud)
+add_subdirectory(processfootage)
+add_subdirectory(footage_pointcloud)
