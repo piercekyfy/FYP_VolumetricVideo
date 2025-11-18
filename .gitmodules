@@ -1,0 +1,9 @@
+[submodule "Renderer/lib/glm"]
+	path = Renderer/lib/glm
+	url = https://github.com/g-truc/glm
+[submodule "Renderer/lib/glfw"]
+	path = Renderer/lib/glfw
+	url = https://github.com/glfw/glfw
+[submodule "Renderer/lib/opencv"]
+	path = Renderer/lib/opencv
+	url = https://github.com/opencv/opencv.git
