@@ -78,9 +78,22 @@ struct Point {
 	glm::vec2 texcoord;
 };
 
+#include "RGBDStream/FileRGBDStream.hpp"
+
 int main() {
 
 	std::string relPath = getPathWindows();
+
+	try {
+		RGBDStream::FileRGBDStream s{ relPath + "\\frames" };
+	}
+	catch (std::exception& e) {
+		std::cout << e.what() << '\n';
+	}
+
+	return 0; // TEMP
+
+	//std::string relPath = getPathWindows();
 
 	// Process Depth
 

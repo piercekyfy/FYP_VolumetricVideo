@@ -7,8 +7,8 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 
-int main() {
 
+int main() {
     GLFWwindow* window = initSimpleResizableViewport(600, 600);
 
     if (window == nullptr) {
