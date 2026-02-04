@@ -5,6 +5,11 @@
 
 namespace RGBDStream {
 
+	enum StreamType {
+		Color = 0,
+		Depth = 1
+	}; // I want to keep this implementation open to the addition alternative streams like IR.
+
 	struct Intrinsics {
 		int width;
 		int height;
@@ -16,6 +21,7 @@ namespace RGBDStream {
 	};
 
 	struct Stream {
+		StreamType type;
 		int fps;
 		int bpp;
 		Intrinsics intrinsics;
@@ -24,8 +30,7 @@ namespace RGBDStream {
 	struct Description {
 		std::string serial;
 		double depthScale;
-		Stream color;
-		Stream depth;
+		std::vector<Stream> streams{};
 	};
 
 	class RGBDStream {

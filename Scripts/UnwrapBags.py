@@ -28,6 +28,13 @@ if(len(bag_files) <= 0):
 if(output_directory == None or output_directory == ""):
     raise Exception("Output directory must be specified. Specify output directory with -o or --Output")
 
+def translate_stream_type(stream_type):
+        if(stream_type == 0 or stream_type == 2): # any or color
+            return 1 # color
+        if(stream_type == 1): # depth
+            return 2 #depth
+        else:
+            return 1 # color. TODO: support ir, etc.
 
 def save_frames(pipeline, out_directory):
     index = 0
@@ -45,8 +52,8 @@ def save_frames(pipeline, out_directory):
         color_img = np.asanyarray(color_frame.get_data())
         depth_data = np.asanyarray(depth_frame.get_data(), dtype=np.uint16)
 
-        cv2.imwrite(os.path.join(out_directory, "color", f"{index:06d}.png"), color_img)
-        depth_data.tofile(os.path.join(out_directory, "depth", f"{index:06d}.bin"))
+        cv2.imwrite(os.path.join(out_directory, str(translate_stream_type(rs.stream.color)), f"{index:06d}.png"), color_img)
+        depth_data.tofile(os.path.join(out_directory, str(translate_stream_type(rs.stream.depth)), f"{index:06d}.bin"))
 
         index += 1
     pipeline.stop()
@@ -63,10 +70,9 @@ def process_bag(bag_file, output_directory):
     color_stream = profile.get_stream(rs.stream.color)
     depth_stream = profile.get_stream(rs.stream.depth)
     depth_sensor = profile.get_device().first_depth_sensor()
-
     os.makedirs(os.path.join(output_directory, serial), exist_ok=True)
-    os.makedirs(os.path.join(output_directory, serial, "color"), exist_ok=True)
-    os.makedirs(os.path.join(output_directory, serial, "depth"), exist_ok=True)
+    os.makedirs(os.path.join(output_directory, serial, str(translate_stream_type(rs.stream.color))), exist_ok=True)
+    os.makedirs(os.path.join(output_directory, serial, str(translate_stream_type(rs.stream.depth))), exist_ok=True)
     save_frames(pipeline, os.path.join(output_directory, serial))
 
     description = {}
@@ -75,6 +81,7 @@ def process_bag(bag_file, output_directory):
         vs = stream.as_video_stream_profile()
         intr = vs.get_intrinsics()
         return {
+            "stream_type": translate_stream_type(int(stream.stream_type())),
             "width": vs.width(),
             "height": vs.height(),
             "fps": stream.fps(),
@@ -91,10 +98,10 @@ def process_bag(bag_file, output_directory):
 
     description['serial'] = serial
     description['depth_scale'] = depth_sensor.get_depth_scale()
-    description['streams'] = {
-        "color": get_stream_obj(color_stream),
-        "depth": get_stream_obj(depth_stream)
-    }
+    description['streams'] = [ # TODO: support ir, etc.
+        get_stream_obj(color_stream),
+        get_stream_obj(depth_stream)
+    ]
     
     with open(os.path.join(output_directory, serial, "description.json"), 'w') as file:
         json.dump(description, file)

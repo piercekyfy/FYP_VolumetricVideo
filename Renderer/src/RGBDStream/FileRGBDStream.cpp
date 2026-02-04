@@ -9,8 +9,6 @@ static bool DirExists(std::string_view path) {
 	return std::filesystem::exists(path) && std::filesystem::is_directory(path);
 }
 
-
-
 namespace RGBDStream {
 
 	static void from_json(const nlohmann::json& j, Intrinsics& intr) {
@@ -35,8 +33,10 @@ namespace RGBDStream {
 	static void from_json(const nlohmann::json& j, Description& d) {
 		j.at("serial").get_to(d.serial);
 		j.at("depth_scale").get_to(d.depthScale);
-		j.at("streams").at("color").get_to(d.color);
-		j.at("streams").at("depth").get_to(d.depth);
+
+		for (const auto& js : j.at("streams")) {
+			d.streams.push_back(js.get<Stream>());
+		}
 	}
 
 	FileRGBDStream::FileRGBDStream(std::string_view sourcePath) : sourcePath{ std::filesystem::path{sourcePath} } {
@@ -50,8 +50,6 @@ namespace RGBDStream {
 			throw std::runtime_error("Description file not found at: " + (this->sourcePath / "description.json").string());
 		
 		this->description = nlohmann::json::parse(descriptionFile).get<Description>();
-
-		std::cout << this->description.depthScale;
 	}
 
 }
