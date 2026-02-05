@@ -65,10 +65,12 @@ namespace RGBDStream {
 			switch (stream.type) {
 			case StreamType::Color: { // Dividing by the size of a uint8 is redundant.
 
-				cv::Mat image = cv::imread(filePath, cv::IMREAD_COLOR_RGB);
-
+				cv::Mat image = cv::imread(filePath, cv::IMREAD_COLOR); // This sends out a log when it fails. TODO: remember to disable.
+				
 				if (image.empty())
 					continue;
+
+				cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
 
 				(*fs).AddColor(std::move(image));
 				break;

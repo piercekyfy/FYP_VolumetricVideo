@@ -8,60 +8,9 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 
-#include "opencv2/opencv.hpp"
 
 #include "glcommon.hpp"
-
-#include "nlohmann/json.hpp"
-
-struct intrinsics {
-	int width;
-	int height;
-	int ppx;
-	int ppy;
-	int fx;
-	int fy;
-	int coeffs[5];
-};
-
-struct stream {
-	int fps;
-	int bpp;
-	intrinsics intrinsics;
-};
-
-struct description {
-	std::string serial;
-	double depthScale;
-	stream color;
-	stream depth;
-};
-
-void from_json(const nlohmann::json& j, intrinsics& intr) {
-	j.at("width").get_to(intr.width);
-	j.at("height").get_to(intr.height);
-	j.at("ppx").get_to(intr.ppx);
-	j.at("ppy").get_to(intr.ppy);
-	j.at("fx").get_to(intr.fx);
-	j.at("fy").get_to(intr.fy);
-
-	for (int i = 0; i < 5; i++) {
-		j.at("coeffs").at(i).get_to(intr.coeffs[i]);
-	}
-}
-
-void from_json(const nlohmann::json& j, stream& s) {
-	j.at("fps").get_to(s.fps);
-	j.at("bpp").get_to(s.bpp);
-	j.at("intrinsics").get_to(s.intrinsics);
-}
-
-void from_json(const nlohmann::json& j, description& d) {
-	j.at("serial").get_to(d.serial);
-	j.at("depth_scale").get_to(d.depthScale);
-	j.at("streams").at("color").get_to(d.color);
-	j.at("streams").at("depth").get_to(d.depth);
-}
+#include "RGBDStream/FileRGBDStream.hpp"
 
 glm::vec3 project(int u, int v, float d, float fx, float fy, float ppx, float ppy) {
 	if (d <= 0)
@@ -78,7 +27,17 @@ struct Point {
 	glm::vec2 texcoord;
 };
 
-#include "RGBDStream/FileRGBDStream.hpp"
+void GetPoints(const RGBData* rgb, const DepthData* depth, RGBDStream::Intrinsics depthIntr, std::vector<Point>& buffer) {
+	for (int v = 0; v < depth->height; v++) {
+		for (int u = 0; u < depth->width; u++) {
+			buffer.push_back(
+				Point{
+					project(u, v, depth->data[v * depth->width + u] * depth->scale, depthIntr.fx, depthIntr.fy, depthIntr.ppx, depthIntr.ppy),
+					glm::vec2{u / float(rgb->width()), v / float(rgb->height()) }
+				});
+		}
+	}
+}
 
 int main() {
 
@@ -93,15 +52,7 @@ int main() {
 	std::vector<Point> points;
 	points.reserve(dFrame->data.size());
 
-	for (int v = 0; v < dFrame->height; v++) {
-		for (int u = 0; u < dFrame->width; u++) {
-			points.push_back(
-				Point{
-					project(u, v, dFrame->data[v * dFrame->width + u] * dFrame->scale, dDescriptor.intrinsics.fx, dDescriptor.intrinsics.fy, dDescriptor.intrinsics.ppx, dDescriptor.intrinsics.ppy),
-					glm::vec2{u / float(rgbFrame->width()), v / float(rgbFrame->height()) }
-				});
-		}
-	}
+	GetPoints(rgbFrame, dFrame, dDescriptor.intrinsics, points);
 
 	// Setup OpenGL
 
@@ -177,16 +128,22 @@ int main() {
 
 	glEnable(GL_DEPTH_TEST);
 
+	double lastTime = glfwGetTime();
+	double timer = 0.0;
+
 	while (!glfwWindowShouldClose(window)) {
+		double deltaTime = glfwGetTime() - lastTime;
+		lastTime = glfwGetTime();
+		timer += deltaTime;
+
 		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
 		float angle = (float)glfwGetTime();
 		
-		model = glm::rotate(glm::mat4(1.0f),
-			angle,
-			glm::vec3(0.0f, 1.0f, 0.0f));
+		//model = glm::rotate(glm::mat4(1.0f),
+		//	angle,
+		//	glm::vec3(0.0f, 1.0f, 0.0f));
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, texture0);
@@ -199,6 +156,30 @@ int main() {
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
+
+		if (timer >= 0.03) {
+			timer = 0.0;
+
+			fs = s.WaitForFrames();
+
+			if (fs == nullptr) {
+				s.Reset();
+				fs = s.WaitForFrames();
+			}
+
+			auto rgbFrame = fs->GetFirst(StreamType::Color)->AsColor();
+			auto dFrame = fs->GetFirst(StreamType::Depth)->AsDepth();
+			image = rgbFrame->image;
+			points.clear();
+			GetPoints(rgbFrame, dFrame, dDescriptor.intrinsics, points);
+
+			glBindBuffer(GL_ARRAY_BUFFER, VBO);
+			glBufferSubData(GL_ARRAY_BUFFER, 0, points.size() * sizeof(Point), points.data());
+
+			glBindTexture(GL_TEXTURE_2D, texture0);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, image.cols, image.rows, GL_RGB, GL_UNSIGNED_BYTE, image.data);
+			glGenerateMipmap(GL_TEXTURE_2D);
+		}
 	};
 
 	glDeleteVertexArrays(1, &VAO);
