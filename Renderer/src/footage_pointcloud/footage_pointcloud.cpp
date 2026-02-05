@@ -84,51 +84,21 @@ int main() {
 
 	std::string relPath = getPathWindows();
 
-	try {
-		RGBDStream::FileRGBDStream s{ relPath + "\\frames" };
-	}
-	catch (std::exception& e) {
-		std::cout << e.what() << '\n';
-	}
-
-	return 0; // TEMP
-
-	//std::string relPath = getPathWindows();
-
-	// Process Depth
-
-	std::ifstream descriptionFile{ relPath + "\\frames\\description.json" };
-
-	if (!descriptionFile)
-		throw std::runtime_error("Frames description not found.");
-
-	nlohmann::json descriptionJson = nlohmann::json::parse(descriptionFile);
-	description desc = descriptionJson.get<description>();
-
-	descriptionFile.close();
-
-	int depthStride = desc.depth.intrinsics.width * desc.depth.bpp;
-	int depthFileSizeBytes = depthStride * desc.depth.intrinsics.height;
-
-	std::ifstream depthFile{ relPath + "\\frames\\000000.bin", std::ios::binary };
-
-	if (!depthFile)
-		throw std::runtime_error("Depth frame not found.");
-
-	std::vector<uint16_t> data(desc.depth.intrinsics.width * desc.depth.intrinsics.height);
-
-	depthFile.read(reinterpret_cast<char*>(data.data()), depthFileSizeBytes);
-	depthFile.close();
-
+	RGBDStream::FileRGBDStream s{ relPath + "\\frames" };
+	auto fs = s.WaitForFrames();
+	auto rgbFrame = fs->GetFirst(StreamType::Color)->AsColor();
+	auto dFrame = fs->GetFirst(StreamType::Depth)->AsDepth();
+	auto dDescriptor = s.GetDescription().GetFirst(StreamType::Depth).value().get();
+		
 	std::vector<Point> points;
-	points.reserve(data.size());
+	points.reserve(dFrame->data.size());
 
-	for (int v = 0; v < desc.depth.intrinsics.height; v++) {
-		for (int u = 0; u < desc.depth.intrinsics.width; u++) {
+	for (int v = 0; v < dFrame->height; v++) {
+		for (int u = 0; u < dFrame->width; u++) {
 			points.push_back(
 				Point{
-					project(u, v, data[v * desc.depth.intrinsics.width + u] * desc.depthScale, desc.depth.intrinsics.fx, desc.depth.intrinsics.fy, desc.depth.intrinsics.ppx, desc.depth.intrinsics.ppy),
-					glm::vec2{u / float(desc.color.intrinsics.width), v / float(desc.color.intrinsics.height) }
+					project(u, v, dFrame->data[v * dFrame->width + u] * dFrame->scale, dDescriptor.intrinsics.fx, dDescriptor.intrinsics.fy, dDescriptor.intrinsics.ppx, dDescriptor.intrinsics.ppy),
+					glm::vec2{u / float(rgbFrame->width()), v / float(rgbFrame->height()) }
 				});
 		}
 	}
@@ -144,8 +114,7 @@ int main() {
 
 	// Get Texture
 
-	cv::Mat image = cv::imread(relPath + "\\frames\\000000.png");
-	cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
+	cv::Mat image{ rgbFrame->image };
 
 	if (image.empty())
 		throw std::runtime_error("Color frame not found.");

@@ -1,15 +1,12 @@
 #pragma once
 
+#include "Frameset.hpp"
+
 #include <string>
+#include <functional>
 #include "nlohmann/json.hpp"
 
 namespace RGBDStream {
-
-	enum StreamType {
-		Color = 0,
-		Depth = 1
-	}; // I want to keep this implementation open to the addition alternative streams like IR.
-
 	struct Intrinsics {
 		int width;
 		int height;
@@ -31,6 +28,14 @@ namespace RGBDStream {
 		std::string serial;
 		double depthScale;
 		std::vector<Stream> streams{};
+	public:
+		std::optional<std::reference_wrapper<const Stream>> GetFirst(StreamType type) const {
+			for (const auto& s : this->streams) {
+				if (s.type == type)
+					return std::cref(s);
+			}
+			return std::nullopt;
+		}
 	};
 
 	class RGBDStream {
@@ -38,6 +43,7 @@ namespace RGBDStream {
 		const Description& GetDescription() const {
 			return this->description;
 		}
+		virtual std::unique_ptr<Frameset> WaitForFrames(int timeout = 1000) = 0;
 	protected:
 		Description description;
 	};

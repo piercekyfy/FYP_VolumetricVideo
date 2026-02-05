@@ -30,11 +30,11 @@ if(output_directory == None or output_directory == ""):
 
 def translate_stream_type(stream_type):
         if(stream_type == 0 or stream_type == 2): # any or color
-            return 1 # color
+            return 0 # color
         if(stream_type == 1): # depth
-            return 2 #depth
+            return 1 #depth
         else:
-            return 1 # color. TODO: support ir, etc.
+            return 0 # color. TODO: support ir, etc.
 
 def save_frames(pipeline, out_directory):
     index = 0

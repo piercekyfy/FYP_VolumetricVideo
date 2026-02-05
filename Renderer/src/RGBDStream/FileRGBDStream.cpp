@@ -1,9 +1,9 @@
 #include "RGBDStream/FileRGBDStream.hpp"
+#include "RGBDStream/Frameset.hpp"
 
 #include <iostream>
-
-#include <fstream>
-#include "opencv2/opencv.hpp"
+#include <sstream>
+#include <iomanip>
 
 static bool DirExists(std::string_view path) {
 	return std::filesystem::exists(path) && std::filesystem::is_directory(path);
@@ -25,6 +25,7 @@ namespace RGBDStream {
 	}
 
 	static void from_json(const nlohmann::json& j, Stream& s) {
+		j.at("stream_type").get_to(s.type);
 		j.at("fps").get_to(s.fps);
 		j.at("bpp").get_to(s.bpp);
 		j.at("intrinsics").get_to(s.intrinsics);
@@ -48,8 +49,56 @@ namespace RGBDStream {
 
 		if (!descriptionFile)
 			throw std::runtime_error("Description file not found at: " + (this->sourcePath / "description.json").string());
-		
+
 		this->description = nlohmann::json::parse(descriptionFile).get<Description>();
 	}
 
+	std::unique_ptr<Frameset> FileRGBDStream::WaitForFrames(int timeout) {
+		auto fs = std::make_unique<Frameset>();
+
+		for (const auto& stream : this->description.streams) {
+			std::string prefix = stream.type == StreamType::Depth ? ".bin" : ".png";
+			std::string directory = std::to_string(static_cast<int>(stream.type));
+			std::string fileName = (std::ostringstream{} << std::setfill('0') << std::setw(6) << this->fileIndex).str() + prefix;
+			std::string filePath = (this->sourcePath / directory / fileName).string();
+
+			switch (stream.type) {
+			case StreamType::Color: { // Dividing by the size of a uint8 is redundant.
+
+				cv::Mat image = cv::imread(filePath, cv::IMREAD_COLOR_RGB);
+
+				if (image.empty())
+					continue;
+
+				(*fs).AddColor(std::move(image));
+				break;
+			}
+			case StreamType::Depth: {
+
+				size_t expectedSize = stream.intrinsics.width * stream.intrinsics.height * stream.bpp;
+
+				std::vector<uint16_t> buffer(expectedSize / sizeof(uint16_t));
+
+				this->fileReader.open(filePath, std::ios::binary);
+
+				if (!this->fileReader)
+					continue;
+
+				fileReader.read(reinterpret_cast<char*>(buffer.data()), expectedSize);
+
+				(*fs).AddDepth(std::move(buffer), stream.intrinsics.width, stream.intrinsics.height, this->description.depthScale);
+
+				this->fileReader.close();
+				break;
+			}
+			}
+		}
+
+		if ((*fs).Size() <= 0)
+			return nullptr;
+
+		++fileIndex;
+
+		return fs;
+	}
 }
