@@ -36,7 +36,7 @@ int main() {
     cv::cvtColor(bgrSource.clone(), greySource, cv::COLOR_BGR2GRAY);
 
     cv::Size boardSize{ 6, 9 };
-    double cellSize{ 0.253 };
+    double cellSize{ 0.0253 };
 
     std::vector<cv::Point3f> objectPoints;
 
@@ -69,6 +69,19 @@ int main() {
 
     std::vector<cv::Point2f> projectedPointsTarget{};
     cv::projectPoints(objectPoints, rotTarget, transTarget, matrixTarget, coeffTarget, projectedPointsTarget);
+
+    double error = 0.0;
+    for (size_t i = 0; i < projectedPointsTarget.size(); i++) {
+        double dx = cornersTarget[i].x - projectedPointsTarget[i].x;
+        double dy = cornersTarget[i].y - projectedPointsTarget[i].y;
+        error += dx * dx + dy * dy;
+    }
+
+    std::cout << "HELLO WORLD" << '\n';
+    error = std::sqrt(error / projectedPointsTarget.size()); // pixel error
+    std::cout << "ERROR: " << error << '\n';
+
+    std::cout << cv::norm(transTarget) << '\n';
 
     for (size_t i = 0; i < cornersTarget.size(); i++) {
         cv::circle(bgrTarget, cornersTarget[i], 4, { 0, 255, 0 }, -1); // detected (green)

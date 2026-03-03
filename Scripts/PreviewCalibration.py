@@ -36,7 +36,7 @@ for device in devices:
     ir_sensor.set_option(rs.option.enable_auto_exposure, 1)
     ir_sensor.set_option(rs.option.emitter_enabled, 0)
 
-checkerboard_params = [6, 9, 0.253]
+checkerboard_params = [6, 9, 0.0253]
 
 for i in range(120): # Let some frames pass for auto exposure
     for pipeline in pipelines:

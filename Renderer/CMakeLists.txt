@@ -54,15 +54,10 @@ target_include_directories(GLAD PRIVATE ${GLAD_DIR}/include)
 
 # opencv
 
-set(OpenCV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../opencv)
-set(OpenCV_DLLS_DIR ${OpenCV_DIR}/x64/vc17/bin)
+set(OpenCV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/opencv)
+set(OpenCV_DLLS_DIR ${OpenCV_DIR}/x64/vc18/bin)
 
 find_package(OpenCV REQUIRED)
-
-# nlohmann/json
-
-FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
-FetchContent_MakeAvailable(json)
 
 function(copy_opencv_dlls TARGET_NAME)
 	string(JOIN ".*|" LIB_SEARCH_STR ${ARGN})
@@ -80,6 +75,12 @@ function(copy_opencv_dlls TARGET_NAME)
 		endif()
 	endforeach()
 endfunction()
+
+
+# nlohmann/json
+
+FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
+FetchContent_MakeAvailable(json)
 
 # glm
 

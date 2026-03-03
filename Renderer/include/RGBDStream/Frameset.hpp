@@ -1,6 +1,5 @@
 #pragma once
 
-#include "RGBDStream.hpp"
 #include "opencv2/opencv.hpp"
 
 #include <vector>
@@ -29,12 +28,43 @@ struct DepthData {
 	int stride() const { return width * sizeof(uint16_t); }
 };
 
+struct Intrinsics {
+	int width;
+	int height;
+	int ppx;
+	int ppy;
+	int fx;
+	int fy;
+	int coeffs[5];
+};
+
+struct Stream {
+	StreamType type;
+	int fps;
+	int bpp;
+	Intrinsics intrinsics;
+};
+
+struct FrameDescription { // Type name is incorrect. Should be 'FramesetDescription' (but it is too cumbersome to change rn)
+	std::string serial;
+	double depthScale{ 0.0 };
+	std::vector<Stream> streams{};
+public:
+	std::optional<std::reference_wrapper<const Stream>> GetFirst(StreamType type) const {
+		for (const auto& s : this->streams) {
+			if (s.type == type)
+				return std::cref(s);
+		}
+		return std::nullopt;
+	}
+};
+
 class Frame {
 public:
 	std::variant<RGBData, DepthData> data;
 
-	Frame(RGBData&& data) : data(std::move(data)) {};
-	Frame(DepthData&& data) : data(std::move(data)) {};
+	Frame(RGBData&& data, Stream description) : data(std::move(data)), description(description) {};
+	Frame(DepthData&& data, Stream description) : data(std::move(data)), description(description) {};
 
 	const RGBData* AsColor() const {
 		return std::get_if<RGBData>(&data);
@@ -42,16 +72,24 @@ public:
 	const DepthData* AsDepth() const {
 		return std::get_if<DepthData>(&data);
 	}
+	const Stream GetDescription() {
+		return this->description;
+	}
+private:
+	Stream description{};
 };
 
 class Frameset {
-	std::vector<std::pair<StreamType, std::shared_ptr<Frame>>> frames{};
+private:
+	FrameDescription description;
 public:
-	void AddColor(cv::Mat image) {
-		frames.emplace_back(StreamType::Color, std::make_shared<Frame>(RGBData{ std::move(image) }));
+	Frameset(FrameDescription description) : description(description) {}
+	std::vector<std::pair<StreamType, std::shared_ptr<Frame>>> frames{}; // TODO: make private accessor
+	void AddColor(cv::Mat image, Stream description) {
+		frames.emplace_back(StreamType::Color, std::make_shared<Frame>(RGBData{ std::move(image) }, description));
 	}
-	void AddDepth(std::vector<uint16_t>&& data, int w, int h, double scale) {
-		frames.emplace_back(StreamType::Depth, std::make_shared<Frame>(DepthData{ std::move(data), w, h, scale }));
+	void AddDepth(std::vector<uint16_t>&& data, int w, int h, double scale, Stream description) {
+		frames.emplace_back(StreamType::Depth, std::make_shared<Frame>(DepthData{ std::move(data), w, h, scale }, description));
 	}
 	size_t Size() const {
 		return this->frames.size();
@@ -62,5 +100,11 @@ public:
 				return f.second;
 		}
 		return nullptr;
+	}
+	const bool Has(StreamType type) const {
+		return GetFirst(type) != nullptr;
+	}
+	const FrameDescription GetDescription() const {
+		return this->description;
 	}
 };

@@ -12,6 +12,11 @@
 #include "glcommon.hpp"
 #include "RGBDStream/FileRGBDStream.hpp"
 
+struct Point {
+	glm::vec3 position;
+	glm::vec2 texcoord;
+};
+
 glm::vec3 project(int u, int v, float d, float fx, float fy, float ppx, float ppy) {
 	if (d <= 0)
 		return glm::vec3{ 0,0,0 };
@@ -22,12 +27,7 @@ glm::vec3 project(int u, int v, float d, float fx, float fy, float ppx, float pp
 	return glm::vec3{ x, -y, z }; // Flip y
 }
 
-struct Point {
-	glm::vec3 position;
-	glm::vec2 texcoord;
-};
-
-void GetPoints(const RGBData* rgb, const DepthData* depth, RGBDStream::Intrinsics depthIntr, std::vector<Point>& buffer) {
+void GetPoints(const RGBData* rgb, const DepthData* depth, Intrinsics depthIntr, std::vector<Point>& buffer) {
 	for (int v = 0; v < depth->height; v++) {
 		for (int u = 0; u < depth->width; u++) {
 			buffer.push_back(
@@ -38,6 +38,8 @@ void GetPoints(const RGBData* rgb, const DepthData* depth, RGBDStream::Intrinsic
 		}
 	}
 }
+
+
 
 int main() {
 
