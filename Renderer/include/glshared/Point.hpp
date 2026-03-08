@@ -56,7 +56,7 @@ public:
 
 		auto depthIntr = depthFrame->GetDescription().intrinsics;
 
-		auto depth = depthFrame->AsDepth()->data;
+		auto depth = depthFrame->AsDepth()->GetData();
 
 		for (int v = 0; v < sourceHeight; v++) {
 			for (int u = 0; u < sourceWidth; u++) {

@@ -6,6 +6,12 @@ if (POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
+if(WIN32)
+    set(USER_HOME "$ENV{USERPROFILE}")
+else()
+    set(USER_HOME "$ENV{HOME}")
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -81,6 +87,27 @@ endfunction()
 
 FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
 FetchContent_MakeAvailable(json)
+
+# Realsense
+
+set(realsense2_DIR "" CACHE PATH "Optional path to Realsense SDK.")
+
+if(realsense2_DIR)
+	add_library(realsense2::realsense2 SHARED IMPORTED) 
+	set_target_properties(realsense2::realsense2 PROPERTIES
+		IMPORTED_LOCATION     "${realsense2_DIR}/bin/x64/realsense2.dll"
+		IMPORTED_IMPLIB       "${realsense2_DIR}/lib/x64/realsense2.lib"
+		INTERFACE_INCLUDE_DIRECTORIES "${realsense2_DIR}/include"
+	)
+
+	function(copy_rs_dlls TARGET_NAME)
+		add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different
+				"${realsense2_DIR}/bin/x64/realsense2.dll"
+				"$<TARGET_FILE_DIR:${TARGET_NAME}>"
+		)
+	endfunction()
+endif()
 
 # glm
 

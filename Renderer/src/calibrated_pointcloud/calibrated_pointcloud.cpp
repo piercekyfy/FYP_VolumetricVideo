@@ -12,6 +12,7 @@
 
 #include <RGBDStream/Frameset.hpp>
 #include "RGBDStream/FileRGBDStream.hpp"
+#include "RGBDStream/RealsenseRGBDStream.hpp"
 #include "calibration/StereoCalibrator.hpp"
 
 #include "opencv2/core.hpp"
@@ -34,6 +35,8 @@ StereoPoseResult EstimateStereoPose(RGBDStream::RGBDStream& streamR, RGBDStream:
 	return calibrator.GetPose(intrR, intrL);
 }
 
+#include "librealsense2/rs.hpp"
+
 glm::mat4 CVToGLM(const cv::Mat& R, const cv::Mat& T) {
 	glm::mat4 transform(1.0f);
 
@@ -52,23 +55,27 @@ int main() {
 
 	std::string relPath = getPathWindows();
 
-	RGBDStream::FileRGBDStream cam0{ relPath + "\\frames\\239622300610" };
-	RGBDStream::FileRGBDStream cam1{ relPath + "\\frames\\241122306275" };
+	//RGBDStream::FileRGBDStream cam0{ relPath + "\\frames\\239622300610" };
+	//RGBDStream::FileRGBDStream cam1{ relPath + "\\frames\\241122306275" };
+
+
+	RGBDStream::RealsenseRGBDStream cam0{ "239622300610", {640, 480, 15} };
+	//RGBDStream::RealsenseRGBDStream cam1{ "241122306275", {640, 480, 15} };
 	auto rgbDescription = cam0.GetDescription().GetFirst(StreamType::Color).value().get();
 
-	StereoCalibrator calibrator{ 9, 6, 0.0253, rgbDescription.intrinsics.width, rgbDescription.intrinsics.height };
+	//StereoCalibrator calibrator{ 9, 6, 0.0253, rgbDescription.intrinsics.width, rgbDescription.intrinsics.height };
 
-	auto calibrationResult = EstimateStereoPose(cam0, cam1, calibrator);
+	//auto calibrationResult = EstimateStereoPose(cam0, cam1, calibrator);
 
-	cam0.Reset();
-	cam1.Reset();
+	//cam0.Reset();
+	//cam1.Reset();
 
-	if (!calibrationResult.Success) {
-		std::cerr << "Failed to calibrate any samples. Is there a clearly visible checkerboard pattern in all cameras view?" << '\n';
-		return -1;
-	}
+	//if (!calibrationResult.Success) {
+	//	std::cerr << "Failed to calibrate any samples. Is there a clearly visible checkerboard pattern in all cameras view?" << '\n';
+	//	return -1;
+	//}
 
-	std::cout << "Calibrated with " << calibrationResult.SuccessfulSamples << " samples and an error of: " << calibrationResult.Error << " pixels." << '\n';
+	//std::cout << "Calibrated with " << calibrationResult.SuccessfulSamples << " samples and an error of: " << calibrationResult.Error << " pixels." << '\n';
 
 	GLFWwindow* window = initSimpleResizableViewport(600, 600);
 
@@ -103,7 +110,7 @@ int main() {
 	double lastTime = glfwGetTime();
 	double timer = 0.0;
 
-	glm::mat4 alignTransform = CVToGLM(calibrationResult.R, calibrationResult.T);
+	//glm::mat4 alignTransform = CVToGLM(calibrationResult.R, calibrationResult.T);
 
 	while (!glfwWindowShouldClose(window)) {
 
@@ -112,31 +119,45 @@ int main() {
 		timer += deltaTime;
 		lastTime = currentTime;
 
-		if (fs0 == nullptr || fs1 == nullptr) {
-			fs0 = cam0.WaitForFrames();
-			fs1 = cam1.WaitForFrames();
-
-			if (fs0 == nullptr || fs1 == nullptr) {
-				cam0.Reset();
-				cam1.Reset();
-
-				fs0 = cam0.WaitForFrames();
-				fs1 = cam1.WaitForFrames();
-			}
+		auto newFrame = cam0.WaitForFrames(0); // 0ms timeout, non-blocking
+		if (newFrame) {
+			fs0 = std::move(newFrame);
 		}
 
-		if (timer >= 0.3 && fs0 != nullptr && fs1 != nullptr) { // Next Frame
+		//if (fs0 == nullptr /*|| fs1 == nullptr*/) {
+		//	fs0 = nullptr;
+		//	fs1 = nullptr;
+
+		//	auto new0 = cam0.WaitForFrames(99999);
+		//	//auto new1 = cam1.WaitForFrames(99999);
+
+		//	fs0 = std::move(new0);
+		//	//if (new0 != nullptr && new1 != nullptr) {
+		//	//	
+		//	//	fs1 = std::move(new1);
+		//	//}
+
+		//	//if (fs0 == nullptr || fs1 == nullptr) {
+		//	//	cam0.Reset();
+		//	//	cam1.Reset();
+
+		//	//	fs0 = cam0.WaitForFrames();
+		//	//	fs1 = cam1.WaitForFrames();
+		//	//}
+		//}
+
+		if (timer >= 0.3 && fs0 != nullptr /*&& fs1 != nullptr*/) { // Next Frame
 
 			timer = 0.0;
 
 			tex0.Set(fs0->GetFirst(StreamType::Color)->AsColor()->image);
-			tex1.Set(fs1->GetFirst(StreamType::Color)->AsColor()->image);
+			//tex1.Set(fs1->GetFirst(StreamType::Color)->AsColor()->image);
 
 			pc0.Process(fs0.get());
-			pc1.Process(fs1.get());
+			//pc1.Process(fs1.get());
 
 			r_pc0.Update(pc0.Points());
-			r_pc1.Update(pc1.Points());
+			//r_pc1.Update(pc1.Points());
 
 			fs0 = nullptr;
 			fs1 = nullptr;
@@ -158,11 +179,11 @@ int main() {
 
 		r_pc0.Draw();
 
-		tex1.Bind(0);
+		//tex1.Bind(0);
 
-		shader.setMatrix("mvp", GL_FALSE, glm::value_ptr(mvp * glm::inverse(alignTransform)));
+		//shader.setMatrix("mvp", GL_FALSE, glm::value_ptr(mvp /** glm::inverse(alignTransform)*/));
 
-		r_pc1.Draw();
+		//r_pc1.Draw();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();

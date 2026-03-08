@@ -14,28 +14,40 @@ enum class StreamType : int {
 	Depth = 1
 }; // I want to keep this implementation open to the addition alternative streams like IR.
 
-struct RGBData {
+struct RGBData { // TODO: Capitalize to follow naming convention
+		// (this takes so long IDE can't refactor c++ names easily)
 	cv::Mat image;
 	int width() const { return image.cols; }
 	int height() const { return image.rows; }
 };
 
 struct DepthData {
-	std::vector<uint16_t> data;
 	int width;
 	int height;
 	double scale;
-	int stride() const { return width * sizeof(uint16_t); }
+
+	DepthData(std::unique_ptr<uint16_t[]> buffer, int width, int height, double scale) : data(std::move(buffer)), width(width), height(height), scale(scale) {}
+	virtual const uint16_t* GetData() const {
+		return data.get();
+	}
+	size_t Size() const {
+		return stride() * this->height;
+	}
+	virtual int stride() const { return width * sizeof(uint16_t); }
+protected:
+	DepthData() = default;
+private:
+	std::unique_ptr<uint16_t[]> data;
 };
 
 struct Intrinsics {
 	int width;
 	int height;
-	int ppx;
-	int ppy;
-	int fx;
-	int fy;
-	int coeffs[5];
+	float ppx;
+	float ppy;
+	float fx;
+	float fy;
+	float coeffs[5];
 };
 
 struct Stream {
@@ -61,16 +73,18 @@ public:
 
 class Frame {
 public:
-	std::variant<RGBData, DepthData> data;
+	std::variant<std::unique_ptr<RGBData>, std::unique_ptr<DepthData>> data;
 
-	Frame(RGBData&& data, Stream description) : data(std::move(data)), description(description) {};
-	Frame(DepthData&& data, Stream description) : data(std::move(data)), description(description) {};
+	Frame(std::unique_ptr<RGBData> data, Stream description) : data(std::move(data)), description(description) {}
+	Frame(std::unique_ptr<DepthData> data, Stream description) : data(std::move(data)), description(description) {}
 
 	const RGBData* AsColor() const {
-		return std::get_if<RGBData>(&data);
+		auto ptr = std::get_if<std::unique_ptr<RGBData>>(&data);
+		return ptr ? ptr->get() : nullptr;
 	}
 	const DepthData* AsDepth() const {
-		return std::get_if<DepthData>(&data);
+		auto ptr = std::get_if<std::unique_ptr<DepthData>>(&data);
+		return ptr ? ptr->get() : nullptr;
 	}
 	const Stream GetDescription() {
 		return this->description;
@@ -85,11 +99,11 @@ private:
 public:
 	Frameset(FrameDescription description) : description(description) {}
 	std::vector<std::pair<StreamType, std::shared_ptr<Frame>>> frames{}; // TODO: make private accessor
-	void AddColor(cv::Mat image, Stream description) {
-		frames.emplace_back(StreamType::Color, std::make_shared<Frame>(RGBData{ std::move(image) }, description));
+	void AddColor(std::unique_ptr<RGBData> data, Stream description) {
+		frames.emplace_back(StreamType::Color, std::make_shared<Frame>(std::move(data), description));
 	}
-	void AddDepth(std::vector<uint16_t>&& data, int w, int h, double scale, Stream description) {
-		frames.emplace_back(StreamType::Depth, std::make_shared<Frame>(DepthData{ std::move(data), w, h, scale }, description));
+	void AddDepth(std::unique_ptr<DepthData> data, Stream description) {
+		frames.emplace_back(StreamType::Depth, std::make_shared<Frame>(std::move(data), description));
 	}
 	size_t Size() const {
 		return this->frames.size();

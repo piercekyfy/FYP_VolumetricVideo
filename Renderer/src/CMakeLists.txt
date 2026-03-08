@@ -1,8 +1,7 @@
 add_subdirectory(glshared)
 
-add_subdirectory(pointcloud)
-add_subdirectory(processfootage)
-add_subdirectory(footage_pointcloud)
 add_subdirectory(RGBDStream)
 add_subdirectory(calibrate)
 add_subdirectory(calibrated_pointcloud)
+
+add_subdirectory(capture)

@@ -72,25 +72,27 @@ namespace RGBDStream {
 
 				cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
 
-				(*fs).AddColor(std::move(image), stream);
+				(*fs).AddColor(std::make_unique<RGBData>(std::move(image)), stream);
 				break;
 			}
 			case StreamType::Depth: {
 
 				size_t expectedSize = stream.intrinsics.width * stream.intrinsics.height * stream.bpp;
+				size_t elementCount = expectedSize / sizeof(uint16_t);
 
-				std::vector<uint16_t> buffer(expectedSize / sizeof(uint16_t));
+				auto buffer = std::make_unique<uint16_t[]>(elementCount);
 
 				this->fileReader.open(filePath, std::ios::binary);
-
 				if (!this->fileReader)
 					continue;
 
-				fileReader.read(reinterpret_cast<char*>(buffer.data()), expectedSize);
-
-				(*fs).AddDepth(std::move(buffer), stream.intrinsics.width, stream.intrinsics.height, this->description.depthScale, stream);
-
+				fileReader.read(reinterpret_cast<char*>(buffer.get()), expectedSize);
 				this->fileReader.close();
+
+				(*fs).AddDepth(
+					std::make_unique<DepthData>(std::move(buffer), stream.intrinsics.width, stream.intrinsics.height, this->description.depthScale),
+					stream
+				);
 				break;
 			}
 			}
