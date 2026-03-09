@@ -17,116 +17,38 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
+include(ExternalProject)
+
+
 
 project (Renderer)
 
-set(SRC_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
-set(INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/include)
-set(LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib)
-set(SOURCES
-	${SRC_DIR}/main.cpp
-)
+set(SRC_DIR ${CMAKE_SOURCE_DIR}/src)
+set(INCLUDE_DIR ${CMAKE_SOURCE_DIR}/include)
+set(LIB_DIR ${CMAKE_SOURCE_DIR}/lib)
 
-# Macros
+# Had to patch-work opencv and realsense to work
 
-function(copy_rel_dir TARGET_NAME SOURCE_DIR)
-	string(REPLACE "/" "_" DIR_NAME_SAFE ${SOURCE_DIR})
-    set(CUSTOM_TARGET_NAME "copy_${TARGET_NAME}_${DIR_NAME_SAFE}")
-
-	add_custom_target(${CUSTOM_TARGET_NAME} ALL
-		COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different
-			"${CMAKE_CURRENT_SOURCE_DIR}/${SOURCE_DIR}"
-			"$<TARGET_FILE_DIR:${TARGET_NAME}>/${SOURCE_DIR}"
-		COMMENT "[${TARGET_NAME}] COPY ${SOURCE_DIR}"
-	)
-endfunction()
-
-
-# OpenGL
-find_package(OpenGL REQUIRED)
-include_directories(${OPENGL_INCLUDE_DIRS})
-
-# GLFW
-set(GLFW_DIR ${LIB_DIR}/glfw)
-set(GLFW_BUILD_EXAMPLES OFF CACHE INTERNAL "Build the GLFW example programs")
-set(GLFW_BUILD_TESTS OFF CACHE INTERNAL "Build the GLFW test programs")
-set(GLFW_BUILD_DOCS OFF CACHE INTERNAL "Build the GLFW documentation")
-set(GLFW_INSTALL OFF CACHE INTERNAL "Generate installation target")
-add_subdirectory(${GLFW_DIR})
-
-set(GLAD_DIR ${LIB_DIR}/glad)
-add_library(GLAD ${GLAD_DIR}/src/glad.c)
-target_include_directories(GLAD PRIVATE ${GLAD_DIR}/include)
-
-# opencv
-
-set(OpenCV_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/opencv)
+set(OpenCV_DIR ${LIB_DIR}/opencv/)
 set(OpenCV_DLLS_DIR ${OpenCV_DIR}/x64/vc18/bin)
-
-find_package(OpenCV REQUIRED)
-
-function(copy_opencv_dlls TARGET_NAME)
-	string(JOIN ".*|" LIB_SEARCH_STR ${ARGN})
-	set(LIB_SEARCH_STR "(${LIB_SEARCH_STR}).*")
-
-	file(GLOB DLLS "${OpenCV_DLLS_DIR}/*.dll")
-	foreach(DLL ${DLLS})
-		get_filename_component(DLL_NAME "${DLL}" NAME_WE)
-		if(DLL_NAME MATCHES ${LIB_SEARCH_STR})
-			add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-				COMMAND ${CMAKE_COMMAND} -E copy_if_different
-					"${DLL}"
-					"$<TARGET_FILE_DIR:${TARGET_NAME}>"
-			)
-		endif()
-	endforeach()
-endfunction()
-
-
-# nlohmann/json
-
-FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
-FetchContent_MakeAvailable(json)
-
-# Realsense
 
 set(realsense2_DIR "" CACHE PATH "Optional path to Realsense SDK.")
 
 if(realsense2_DIR)
-	add_library(realsense2::realsense2 SHARED IMPORTED) 
+	
+	add_library(realsense2::realsense2 SHARED IMPORTED GLOBAL)
 	set_target_properties(realsense2::realsense2 PROPERTIES
 		IMPORTED_LOCATION     "${realsense2_DIR}/bin/x64/realsense2.dll"
 		IMPORTED_IMPLIB       "${realsense2_DIR}/lib/x64/realsense2.lib"
 		INTERFACE_INCLUDE_DIRECTORIES "${realsense2_DIR}/include"
 	)
-
-	function(copy_rs_dlls TARGET_NAME)
-		add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different
-				"${realsense2_DIR}/bin/x64/realsense2.dll"
-				"$<TARGET_FILE_DIR:${TARGET_NAME}>"
-		)
-	endfunction()
 endif()
 
-# glm
+# deps and scripts
 
-add_subdirectory(${LIB_DIR}/glm)
+add_subdirectory(cmake/)
+add_subdirectory(lib/)
 
-# Define common OpenGL dependencies
+# src
 
-SET(GL_INCLUDES
-	${GLAD_DIR}/include
-	${OPENGL_INCLUDE_DIRS}
-)
-
-SET(GL_LIBS
-	glfw
-	GLAD 
-	${OPENGL_LIBRARIES}
-	${CMAKE_DL_LIBS}
-)
-
-# Sources
-
-add_subdirectory(${SRC_DIR})
+add_subdirectory(src/)

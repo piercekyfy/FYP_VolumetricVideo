@@ -2,7 +2,7 @@
 
 #include "opencv2/opencv.hpp"
 
-#include "glcommon.hpp"
+#include "GLShared/glcommon.hpp"
 #include "RGBDStream/FileRGBDStream.hpp"
 
 

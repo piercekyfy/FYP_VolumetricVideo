@@ -4,78 +4,48 @@
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
 
-#include "glcommon.hpp"
-#include "glshared/Point.hpp"
-#include "glshared/RenderedPoints.hpp"
-#include "glshared/RenderTexture.hpp"
-
+#include "GLShared/glcommon.hpp"
+#include "GLShared/Point.hpp"
+#include "GLShared/RenderedPoints.hpp"
+#include "GLShared/RenderTexture.hpp"
 
 #include <RGBDStream/Frameset.hpp>
 #include "RGBDStream/FileRGBDStream.hpp"
 #include "RGBDStream/RealsenseRGBDStream.hpp"
-#include "calibration/StereoCalibrator.hpp"
+
+#include "calibration/CharucoCalibration.hpp"
 
 #include "opencv2/core.hpp"
 
-
-StereoPoseResult EstimateStereoPose(RGBDStream::RGBDStream& streamR, RGBDStream::RGBDStream& streamL, StereoCalibrator& calibrator) {
-	auto fsR = streamR.WaitForFrames();
-	auto fsL = streamL.WaitForFrames();
-
-	Intrinsics intrR = fsR->GetFirst(StreamType::Color)->GetDescription().intrinsics;
-	Intrinsics intrL = fsL->GetFirst(StreamType::Color)->GetDescription().intrinsics;
-
-	while (fsR != nullptr && fsL != nullptr) {
-		calibrator.Process(fsR->GetFirst(StreamType::Color).get(), fsL->GetFirst(StreamType::Color).get());
-
-		fsR = streamR.WaitForFrames();
-		fsL = streamL.WaitForFrames();
-	}
-
-	return calibrator.GetPose(intrR, intrL);
-}
-
-#include "librealsense2/rs.hpp"
+#include "Eigen/Core"
+#include "Eigen/Dense"
+#include "opencv2/core/eigen.hpp"
 
 glm::mat4 CVToGLM(const cv::Mat& R, const cv::Mat& T) {
-	glm::mat4 transform(1.0f);
+	Eigen::Matrix3d eigenR;
+	Eigen::Vector3d eigenT;
 
-	for (int row = 0; row < 3; row++)
-		for (int col = 0; col < 3; col++)
-			transform[col][row] = (float)R.at<double>(row, col);
+	cv::cv2eigen(R, eigenR);
+	cv::cv2eigen(T, eigenT);
 
-	transform[3][0] = (float)T.at<double>(0);
-	transform[3][1] = (float)T.at<double>(1);
-	transform[3][2] = (float)T.at<double>(2);
+	Eigen::Matrix4d transform = Eigen::Matrix4d::Identity();
+	transform.block<3, 3>(0, 0) = eigenR;
+	transform.block<3, 1>(0, 3) = eigenT;
 
-	return transform;
+	glm::mat4 result;
+	for (int col = 0; col < 4; col++)
+		for (int row = 0; row < 4; row++)
+			result[col][row] = (float)transform(row, col);
+
+	return result;
 }
 
 int main() {
 
 	std::string relPath = getPathWindows();
 
-	//RGBDStream::FileRGBDStream cam0{ relPath + "\\frames\\239622300610" };
-	//RGBDStream::FileRGBDStream cam1{ relPath + "\\frames\\241122306275" };
-
-
-	RGBDStream::RealsenseRGBDStream cam0{ "239622300610", {640, 480, 15} };
-	//RGBDStream::RealsenseRGBDStream cam1{ "241122306275", {640, 480, 15} };
-	auto rgbDescription = cam0.GetDescription().GetFirst(StreamType::Color).value().get();
-
-	//StereoCalibrator calibrator{ 9, 6, 0.0253, rgbDescription.intrinsics.width, rgbDescription.intrinsics.height };
-
-	//auto calibrationResult = EstimateStereoPose(cam0, cam1, calibrator);
-
-	//cam0.Reset();
-	//cam1.Reset();
-
-	//if (!calibrationResult.Success) {
-	//	std::cerr << "Failed to calibrate any samples. Is there a clearly visible checkerboard pattern in all cameras view?" << '\n';
-	//	return -1;
-	//}
-
-	//std::cout << "Calibrated with " << calibrationResult.SuccessfulSamples << " samples and an error of: " << calibrationResult.Error << " pixels." << '\n';
+	RGBDStream::RealsenseRGBDStream cam0{ "239622300610", {640, 480, 15, true} };
+	RGBDStream::RealsenseRGBDStream cam1{ "241122306275", {640, 480, 15, true} };
 
 	GLFWwindow* window = initSimpleResizableViewport(600, 600);
 
@@ -110,8 +80,13 @@ int main() {
 	double lastTime = glfwGetTime();
 	double timer = 0.0;
 
-	//glm::mat4 alignTransform = CVToGLM(calibrationResult.R, calibrationResult.T);
+	CharucoCalibration calib{ 5, 7, 0.030, 0.015};
+	StereoCalibrationResult lastResult{ false };
+	bool calibrationComplete{ false };
+	int icpWaitFrames = 1000;
+	glm::mat4 align;
 
+	std::cout << "Started..." << '\n';
 	while (!glfwWindowShouldClose(window)) {
 
 		double currentTime = glfwGetTime();
@@ -119,49 +94,55 @@ int main() {
 		timer += deltaTime;
 		lastTime = currentTime;
 
-		auto newFrame = cam0.WaitForFrames(0); // 0ms timeout, non-blocking
-		if (newFrame) {
-			fs0 = std::move(newFrame);
+		auto newF0 = cam0.WaitForFrames(0);
+		auto newF1 = cam1.WaitForFrames(0);
+
+		if (newF0) {
+			fs0 = std::move(newF0);
+		}
+		if (newF1) {
+			fs1 = std::move(newF1);
 		}
 
-		//if (fs0 == nullptr /*|| fs1 == nullptr*/) {
-		//	fs0 = nullptr;
-		//	fs1 = nullptr;
+		bool framesInSync = fs0 && fs1 &&
+			std::abs(fs1->GetFirst(StreamType::IR)->Timestamp - fs0->GetFirst(StreamType::IR)->Timestamp) < 50.0;
 
-		//	auto new0 = cam0.WaitForFrames(99999);
-		//	//auto new1 = cam1.WaitForFrames(99999);
 
-		//	fs0 = std::move(new0);
-		//	//if (new0 != nullptr && new1 != nullptr) {
-		//	//	
-		//	//	fs1 = std::move(new1);
-		//	//}
-
-		//	//if (fs0 == nullptr || fs1 == nullptr) {
-		//	//	cam0.Reset();
-		//	//	cam1.Reset();
-
-		//	//	fs0 = cam0.WaitForFrames();
-		//	//	fs1 = cam1.WaitForFrames();
-		//	//}
-		//}
-
-		if (timer >= 0.3 && fs0 != nullptr /*&& fs1 != nullptr*/) { // Next Frame
-
-			timer = 0.0;
-
+		if (fs0 != nullptr) {
 			tex0.Set(fs0->GetFirst(StreamType::Color)->AsColor()->image);
-			//tex1.Set(fs1->GetFirst(StreamType::Color)->AsColor()->image);
-
 			pc0.Process(fs0.get());
-			//pc1.Process(fs1.get());
-
 			r_pc0.Update(pc0.Points());
-			//r_pc1.Update(pc1.Points());
-
-			fs0 = nullptr;
-			fs1 = nullptr;
 		}
+
+		if (fs1 != nullptr) {
+			tex1.Set(fs1->GetFirst(StreamType::Color)->AsColor()->image);
+			pc1.Process(fs1.get());
+			r_pc1.Update(pc1.Points());
+		}			
+
+		if (framesInSync) { // calibrate
+			if (calib.Feed(fs0->GetFirst(StreamType::IR).get(), fs1->GetFirst(StreamType::IR).get())) {
+				std::cout << "Processed Calibration Frame, currently at: " << calib.ValidPairs() << '\n';
+
+				if (calib.ValidPairs() == 20) {
+					lastResult = calib.Calibrate(fs0->GetFirst(StreamType::IR).get()->GetDescription().intrinsics, fs1->GetFirst(StreamType::IR).get()->GetDescription().intrinsics);
+					if (lastResult.Success) {
+						std::cout << "Completed Calibration with an error of: " << lastResult.Error << '\n';
+						calibrationComplete = true;
+						std::cout << "R: " << lastResult.R << '\n';
+						std::cout << "T: " << lastResult.T << '\n';
+						align = glm::inverse(CVToGLM(lastResult.R, lastResult.T));
+					}
+				}
+			}
+		}
+		else {
+			std::cout << "unsync";
+		}
+
+		fs0 = nullptr;
+		fs1 = nullptr;
+		
 
 		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -179,11 +160,17 @@ int main() {
 
 		r_pc0.Draw();
 
-		//tex1.Bind(0);
+		tex1.Bind(0);
 
-		//shader.setMatrix("mvp", GL_FALSE, glm::value_ptr(mvp /** glm::inverse(alignTransform)*/));
+		if (calibrationComplete) {
+			glm::mat4 mvp1 = projection * view * (model * align);
+			shader.setMatrix("mvp", GL_FALSE, glm::value_ptr(mvp1));
+		}
+		else {
+			shader.setMatrix("mvp", GL_FALSE, glm::value_ptr(mvp));
+		}
 
-		//r_pc1.Draw();
+		r_pc1.Draw();
 
 		glfwSwapBuffers(window);
 		glfwPollEvents();
