@@ -44,8 +44,20 @@ int main() {
 
 	std::string relPath = getPathWindows();
 
-	RGBDStream::RealsenseRGBDStream cam0{ "239622300610", {640, 480, 15, true} };
-	RGBDStream::RealsenseRGBDStream cam1{ "241122306275", {640, 480, 15, true} };
+	//RGBDStream::RealsenseRGBDStream cam0{ "239622300610", {640, 480, 15, true} };
+	//RGBDStream::RealsenseRGBDStream cam1{ "241122306275", {640, 480, 15, true} };
+
+	RGBDStream::RealsenseStreamConfiguration config{};
+	config.UseBag = true;
+	config.EnableIR = true;
+	RGBDStream::RealsenseRGBDStream cam0{ "C:\\Users\\Pierce\\Desktop\\FYP_VolumetricVideo\\Scripts\\2cam_calib_239622300610.bag", config };
+	RGBDStream::RealsenseRGBDStream cam1{ "C:\\Users\\Pierce\\Desktop\\FYP_VolumetricVideo\\Scripts\\2cam_calib_241122306275.bag", config };
+
+	RGBDStream::SyncedRealsenseBags cams{
+	"C:\\Users\\Pierce\\Desktop\\FYP_VolumetricVideo\\Scripts\\2cam_calib_239622300610.bag",
+	"C:\\Users\\Pierce\\Desktop\\FYP_VolumetricVideo\\Scripts\\2cam_calib_241122306275.bag",
+	config,
+	};
 
 	GLFWwindow* window = initSimpleResizableViewport(600, 600);
 
@@ -85,7 +97,10 @@ int main() {
 	bool calibrationComplete{ false };
 	int icpWaitFrames = 1000;
 	glm::mat4 align;
-
+	
+	double timestampOffset{ 0 };
+	bool gotOffset{ false };
+	
 	std::cout << "Started..." << '\n';
 	while (!glfwWindowShouldClose(window)) {
 
@@ -93,20 +108,28 @@ int main() {
 		double deltaTime = currentTime - lastTime;
 		timer += deltaTime;
 		lastTime = currentTime;
+		
+		//auto fss = cam0.WaitForFramesSynced(cam1, 50);
 
-		auto newF0 = cam0.WaitForFrames(0);
-		auto newF1 = cam1.WaitForFrames(0);
+		//auto newF0 = cam0.WaitForFrames(0);
+		//auto newF1 = cam1.WaitForFrames(0);
 
-		if (newF0) {
-			fs0 = std::move(newF0);
+		if (timer >= 0.33) {
+			auto fss = cams.WaitForFrames();
+
+			if (fss.first != nullptr && fss.second != nullptr) {
+				fs0 = std::move(fss.first);
+				fs1 = std::move(fss.second);
+			}
+			timer = 0;
 		}
-		if (newF1) {
-			fs1 = std::move(newF1);
-		}
 
-		bool framesInSync = fs0 && fs1 &&
-			std::abs(fs1->GetFirst(StreamType::IR)->Timestamp - fs0->GetFirst(StreamType::IR)->Timestamp) < 50.0;
-
+		//if (newF0) {
+		//	fs0 = std::move(newF0);
+		//}
+		//if (newF1) {
+		//	fs1 = std::move(newF1);
+		//}
 
 		if (fs0 != nullptr) {
 			tex0.Set(fs0->GetFirst(StreamType::Color)->AsColor()->image);
@@ -120,8 +143,10 @@ int main() {
 			r_pc1.Update(pc1.Points());
 		}			
 
-		if (framesInSync) { // calibrate
-			if (calib.Feed(fs0->GetFirst(StreamType::IR).get(), fs1->GetFirst(StreamType::IR).get())) {
+
+		if (fs0 && fs1) { // calibrate
+
+			if (calib.ValidPairs() < 21 && calib.Feed(fs0->GetFirst(StreamType::IR).get(), fs1->GetFirst(StreamType::IR).get())) {
 				std::cout << "Processed Calibration Frame, currently at: " << calib.ValidPairs() << '\n';
 
 				if (calib.ValidPairs() == 20) {
@@ -137,12 +162,12 @@ int main() {
 			}
 		}
 		else {
-			std::cout << "unsync";
+			//std::cout << "unsync";
 		}
 
-		fs0 = nullptr;
-		fs1 = nullptr;
-		
+		//fs0 = nullptr;
+		//fs1 = nullptr;
+		//
 
 		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

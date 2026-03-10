@@ -1,7 +1,6 @@
 #ifdef WITH_REALSENSE
 
 #include "RGBDStream/RealsenseRGBDStream.hpp"
-
 #include "librealsense2/rs.hpp"
 
 namespace RGBDStream {
@@ -25,19 +24,22 @@ namespace RGBDStream {
 	};
 
 	RealsenseRGBDStream::RealsenseRGBDStream(std::string_view serial, RealsenseStreamConfiguration configuration) : serial(serial), impl(std::make_unique<RS_Impl>()) {
-		impl->Config.enable_device(this->serial);
-		impl->Config.enable_stream(RS2_STREAM_COLOR, configuration.Width, configuration.Height, RS2_FORMAT_RGB8, configuration.FPS);
-		impl->Config.enable_stream(RS2_STREAM_DEPTH, configuration.Width, configuration.Height, RS2_FORMAT_Z16, configuration.FPS);
-
-		if (configuration.EnableIR) {
-			impl->Config.enable_stream(RS2_STREAM_INFRARED, 1, configuration.Width, configuration.Height, RS2_FORMAT_Y8, configuration.FPS);
+		if (configuration.UseBag) {
+			impl->Config.enable_device_from_file(std::string{ serial });
 		}
+		else {
+			impl->Config.enable_device(this->serial);
+			impl->Config.enable_stream(RS2_STREAM_COLOR, configuration.Width, configuration.Height, RS2_FORMAT_RGB8, configuration.FPS);
+			impl->Config.enable_stream(RS2_STREAM_DEPTH, configuration.Width, configuration.Height, RS2_FORMAT_Z16, configuration.FPS);
 
+			if (configuration.EnableIR)
+				impl->Config.enable_stream(RS2_STREAM_INFRARED, 1, configuration.Width, configuration.Height, RS2_FORMAT_Y8, configuration.FPS);
+		}
+		
 		auto profile = impl->Pipeline.start(impl->Config);
+
 		auto colorProfile = profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
 		auto depthProfile = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-
-		
 
 		this->description.serial = this->serial;
 		this->description.depthScale = profile.get_device().first<rs2::depth_sensor>().get_depth_scale();
@@ -46,36 +48,25 @@ namespace RGBDStream {
 			{StreamType::Depth, depthProfile.fps(), 16, impl->ToIntrinsics(depthProfile.get_intrinsics())}
 		};
 
-		if (configuration.EnableIR) {
-			// Compromises depth quality, but required for IR quality. Recommend to only use IR shortly when calibrating.
-			auto depthSensor = profile.get_device().first<rs2::depth_sensor>();
-			depthSensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0);
+		auto depthSensor = profile.get_device().first<rs2::depth_sensor>();
 
+		if (configuration.EnableIR) {
 			auto irProfile = profile.get_stream(RS2_STREAM_INFRARED).as<rs2::video_stream_profile>();
 			this->description.streams.emplace_back(
 				StreamType::IR, irProfile.fps(), 8, impl->ToIntrinsics(irProfile.get_intrinsics())
 			);
 		}
+
+		if (!configuration.UseBag) {
+			// Compromises depth quality, but required for IR quality. Recommend to only enable IR when depth isn't used.
+			if (configuration.EnableIR) {
+				depthSensor.set_option(RS2_OPTION_EMITTER_ENABLED, 0);
+			}
+			else {
+				depthSensor.set_option(RS2_OPTION_EMITTER_ENABLED, 1);
+			}
+		}
 	};
-
-	RealsenseRGBDStream::RealsenseRGBDStream(std::string_view bagPath) : impl(std::make_unique<RS_Impl>()) {
-		// TODO: IR support
-		impl->Config.enable_device_from_file(std::string{ bagPath });
-		impl->Config.enable_stream(RS2_STREAM_COLOR, RS2_FORMAT_RGB8);
-		impl->Config.enable_stream(RS2_STREAM_DEPTH, RS2_FORMAT_Z16);
-
-		auto profile = impl->Pipeline.start(impl->Config);
-
-		auto colorProfile = profile.get_stream(RS2_STREAM_COLOR).as<rs2::video_stream_profile>();
-		auto depthProfile = profile.get_stream(RS2_STREAM_DEPTH).as<rs2::video_stream_profile>();
-
-		this->description.serial = this->serial;
-		this->description.depthScale = profile.get_device().first<rs2::depth_sensor>().get_depth_scale();
-		this->description.streams = {
-			{StreamType::Color, colorProfile.fps(), 24, impl->ToIntrinsics(colorProfile.get_intrinsics())},
-			{StreamType::Depth, depthProfile.fps(), 16, impl->ToIntrinsics(depthProfile.get_intrinsics())}
-		};
-	}
 
 	void RealsenseRGBDStream::Stop() {
 		impl->Pipeline.stop();
@@ -124,6 +115,46 @@ namespace RGBDStream {
 		}
 		catch (std::exception) {
 			throw;
+		}
+	}
+
+
+	SyncedRealsenseBags::SyncedRealsenseBags(
+		std::string_view bagA,
+		std::string_view bagB,
+		RealsenseStreamConfiguration config,
+		double maxSyncDeltaMs
+	) : maxDeltaMs(maxSyncDeltaMs)
+	{
+		config.UseBag = true;
+
+		streamA = std::make_unique<RealsenseRGBDStream>(bagA, config);
+		streamB = std::make_unique<RealsenseRGBDStream>(bagB, config);
+
+		streamA->impl->Pipeline.get_active_profile().get_device().as<rs2::playback>().set_real_time(false);
+		streamB->impl->Pipeline.get_active_profile().get_device().as<rs2::playback>().set_real_time(false);
+	}
+
+	std::pair<std::unique_ptr<Frameset>, std::unique_ptr<Frameset>> SyncedRealsenseBags::WaitForFrames(int timeout) {
+		while (true) {
+			if (!pendingA) pendingA = streamA->WaitForFrames(timeout);
+			if (!pendingB) pendingB = streamB->WaitForFrames(timeout);
+
+			if (!pendingA || !pendingB) return { nullptr, nullptr };
+
+			double tsA = pendingA->GetFirst(StreamType::Depth)->Timestamp;
+			double tsB = pendingB->GetFirst(StreamType::Depth)->Timestamp;
+			double delta = std::abs(tsA - tsB);
+
+			if (delta <= maxDeltaMs) {
+				return { std::move(pendingA), std::move(pendingB) };
+			}
+			else if (tsA < tsB) {
+				pendingA = nullptr;
+			}
+			else {
+				pendingB = nullptr;
+			}
 		}
 	}
 }
