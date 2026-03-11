@@ -4,6 +4,9 @@
 
 #include <string>
 #include <functional>
+#include <stdexcept>
+#include <concepts>
+
 #include "nlohmann/json.hpp"
 
 namespace RGBDStream {

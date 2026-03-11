@@ -1,5 +1,5 @@
 add_library(RGBD_STREAM STATIC 
-	"FileRGBDStream.cpp" "RealsenseRGBDStream.cpp")
+	"FileRGBDStream.cpp" "RealsenseStream.cpp")
 
 target_include_directories(RGBD_STREAM 
 	PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

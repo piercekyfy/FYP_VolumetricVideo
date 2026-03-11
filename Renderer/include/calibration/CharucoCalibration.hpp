@@ -31,9 +31,6 @@ public:
 		cv::Mat sourceImg{ sourceFrame->AsColor()->image.clone() };
 		cv::Mat targetImg{ targetFrame->AsColor()->image.clone() };
 
-		cv::imshow("debug", sourceImg);
-		cv::imshow("debug2", targetImg);
-
 		std::vector<cv::Point2f> sourceCorners{};
 		std::vector<int> sourceIds{};
 

@@ -45,6 +45,12 @@ set(EIGEN_BUILD_DOC OFF)
 set(EIGEN_BUILD_PKGCONFIG OFF)
 FetchContent_MakeAvailable(Eigen)
 
+# small-gicp
+
+add_library(SMALL_GICP INTERFACE)
+target_include_directories(SMALL_GICP INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/small_gicp/)
+target_compile_definitions(SMALL_GICP INTERFACE _USE_MATH_DEFINES)
+
 # NLOHMANN/JSON
 
 FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz)
