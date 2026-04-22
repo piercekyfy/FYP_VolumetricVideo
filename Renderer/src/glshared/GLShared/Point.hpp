@@ -2,13 +2,16 @@
 
 #include "glm/glm.hpp"
 
-
-
 #include "Eigen/Core";
 
 #include <RGBDStream/Frameset.hpp>
 
 struct Point {
+	glm::vec3 position;
+	glm::vec3 color;
+};
+
+struct TexturedPoint {
 	glm::vec3 position;
 	glm::vec2 texcoord;
 };
@@ -18,7 +21,7 @@ private:
 	int sourceWidth{ -1 };
 	int sourceHeight{ -1 };
 	std::vector<glm::vec2> rays{};
-	std::vector<Point> points{};
+	std::vector<TexturedPoint> points{};
 
 	void ComputeRays(Frame* frame) {
 		auto desc = frame->GetDescription();
@@ -46,7 +49,7 @@ public:
 	glm::mat4 Translation{ 1.0f };
 
 	Pointcloud() {}
-	const std::vector<Point> Points() const {
+	const std::vector<TexturedPoint> Points() const {
 		return this->points;
 	}
 	std::vector<Eigen::Vector4f> EigenPoints() const {
@@ -91,7 +94,6 @@ public:
 			}
 		}
 	}
-	
 };
 
 #include <small_gicp/ann/kdtree_omp.hpp>

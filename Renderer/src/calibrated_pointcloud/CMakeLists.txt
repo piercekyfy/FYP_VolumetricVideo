@@ -5,4 +5,3 @@ target_link_libraries(CalibratedPointcloud PRIVATE GL_SHARED GL_ALL CV_ALL RGBD_
 COPY_RS_DLLS(CalibratedPointcloud)
 COPY_OPENCV_DLLS(CalibratedPointcloud ${OpenCV_LIBS})
 COPY_REL_DIR(CalibratedPointcloud shaders/)
-COPY_REL_DIR(CalibratedPointcloud frames/)

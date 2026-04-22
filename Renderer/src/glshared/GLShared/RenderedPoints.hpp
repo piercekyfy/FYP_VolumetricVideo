@@ -17,9 +17,9 @@ public:
 		glBindVertexArray(VAO);
 		glBindBuffer(GL_ARRAY_BUFFER, VBO);
 
-		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Point), (void*)0);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(TexturedPoint), (void*)0);
 		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Point), (void*)offsetof(Point, texcoord));
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(TexturedPoint), (void*)offsetof(TexturedPoint, texcoord));
 		glEnableVertexAttribArray(1);
 
 		glBindVertexArray(0);
@@ -28,9 +28,9 @@ public:
 		if (VBO) glDeleteBuffers(1, &VBO);
 		if (VAO) glDeleteVertexArrays(1, &VAO);
 	}
-	void Update(const std::vector<Point>& buffer) {
+	void Update(const std::vector<TexturedPoint>& buffer) {
 		glBindBuffer(GL_ARRAY_BUFFER, VBO);
-		glBufferData(GL_ARRAY_BUFFER, buffer.size() * sizeof(Point), buffer.data(), GL_DYNAMIC_DRAW);
+		glBufferData(GL_ARRAY_BUFFER, buffer.size() * sizeof(TexturedPoint), buffer.data(), GL_DYNAMIC_DRAW);
 		size = buffer.size();
 	}
 	void Draw() const {
