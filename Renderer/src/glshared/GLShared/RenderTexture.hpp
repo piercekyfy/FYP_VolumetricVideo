@@ -17,6 +17,9 @@ public:
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	}
+	~RenderTexture() {
+		glDeleteTextures(1, &TEX);
+	}
 	void Set(const cv::Mat& image) {
 		glBindTexture(GL_TEXTURE_2D, TEX);
 

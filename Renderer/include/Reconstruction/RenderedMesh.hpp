@@ -24,6 +24,11 @@ public:
 
 		glBindVertexArray(0);
 	}
+	~RenderedMesh() {
+		if (vao) glDeleteVertexArrays(1, &vao);
+		if (vbo) glDeleteBuffers(1, &vbo);
+		if (ebo) glDeleteBuffers(1, &ebo);
+	}
 	void Update(const std::vector<Point>& points, const std::vector<int>& tris) {
 		glBindVertexArray(vao);
 

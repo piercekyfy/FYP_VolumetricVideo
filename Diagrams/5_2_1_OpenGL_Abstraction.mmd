@@ -1,0 +1,28 @@
+classDiagram
+    class Shader {
+        -unsigned int id
+        +Use()
+        +SetBool()
+        +SetInt()
+        +SetFloat()
+        +SetMatrix()
+        -GetSource(const char*) : string$
+        -CompileShader(unsigned int&, const char*)
+        -VerifyShader(unisnged int&, bool) : bool
+        -VerifyProgram(unsigned int&, bool) : bool
+    }
+    
+    class RenderedPoints {
+        -GLuint VAO
+        -GLuint VBO
+        -int size
+        +Update(vector~TexturedPoint~& )
+        +Draw()
+    }
+
+    class RenderTexture {
+        -GLuint TEX
+        -bool allocated
+        +Set(Mat&)
+        +Bind(int)
+    }

@@ -1,0 +1,16 @@
+classDiagram
+    class TexturedPoint {
+        +vec3 position
+        +vec3 texcoord
+    }
+
+    class Pointcloud {
+        +mat4 Translation
+        -int sourceWidth
+        -int sourceHeight
+        -vector~vec2~ rays
+        -vector~TexturedPoint~ points
+        +Process(Frameset*)
+        +Points() : vector~TexturedPoint~
+        -ComputeRays(Frame*)
+    }

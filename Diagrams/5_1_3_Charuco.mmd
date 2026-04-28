@@ -1,0 +1,28 @@
+classDiagram
+    class StereoCalibrationResult {
+        +bool Success
+        +Mat R
+        +Mat T
+        +Mat E
+        +Mat F
+        double Error
+    }
+
+    class CalibrationPair {
+        +vector~Point3f~ objectPoints
+        +vector~Point3f~ sourceImagePoints
+        +vector~Point3f~ targetImagePoints
+    }
+
+    class CharucoCalibration {
+        -CharucoBoard board
+        -CharucoDetector detector
+        -vector~Point3f~ boardObjectPoints
+        -int minCorners
+        -vector~CalibrationPair~ pairs
+        +Feed(Frame*, Frame*) : bool
+        +Calibrate(const Intrinsics&, const Intrinsics&) : StereoCalibrationResult
+        +ValidPairs() : int
+        -GetIntrinsicsMat(const Intrinsics&) : Mat
+        -GetCoeffsMat(const Intrinsics&) : Mat
+    }

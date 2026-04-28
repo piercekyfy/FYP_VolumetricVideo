@@ -89,9 +89,6 @@ public:
 	}
 
 	VoxelBlockCoordinate GetVoxelBlock(const glm::ivec3& voxelPosition, glm::ivec3& localOut) const {
-		auto floorDiv = [](int a, int b) -> int { // weird division voodoo. C++ will drop fractions when dividing with integers
-			return a / b - (a % b != 0 && (a ^ b) < 0);
-			};
 
 		VoxelBlockCoordinate coordinate{ // the entire block's coordinate
 			FloorDiv(voxelPosition.x, VoxelBlockSize),

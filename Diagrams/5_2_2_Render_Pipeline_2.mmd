@@ -1,0 +1,67 @@
+flowchart TD
+    S@{ shape: sm-circ } 
+
+
+    subgraph Calibration
+        SCSG(Start Calibration Stream Group)
+        CO(Capture Observation)
+        VS20{Valid Samples >= 20?}
+        C(Calibrate)
+        SRSG(Start Render Stream Group)
+        PP(Process Pointclouds)
+        ICP(Perform ICP)
+        AICP(Apply ICP Result to Pointclouds)
+    end
+
+    subgraph "Rendering"
+        CS(Compile Shaders)
+        IRP(Initialize Rendered Points)
+        ITEX(Initialize Textures)
+        BR(Render)
+
+        WF(Wait for Frames)
+        subgraph "[For each Frameset]"
+        UP(Process Pointcloud)
+        URP(Update Rendered Point)
+        UM(Use Calibrated Pose)
+        BTEX(Bind Texture)
+        US(Use Shader)
+        DR(Draw Points)
+        end
+        SB(Swap Buffers)
+        WC{Window Closed?}
+    end
+    
+    CONT(Rendering...)
+
+    Rendering ~~~ Calibration
+
+    SS@{ shape: framed-circle, label: "Stop" }
+
+    S --> SCSG
+    SCSG --> CO
+    CO --> VS20
+    VS20 -->|No| CO
+    VS20 -->|Yes| C
+    C --> SRSG
+    SRSG --> PP
+    PP --> ICP
+    ICP --> AICP
+    AICP --> CONT
+
+    CS --> IRP
+    IRP --> ITEX
+    ITEX --> BR
+    BR --> WF
+    WF --> UP
+    UP --> URP
+    URP --> UM
+    UM --> BTEX
+    BTEX --> US
+    US --> DR
+    DR --> SB
+    SB --> WC
+    WC -->|No| BR
+    WC -->|Yes| SS
+
+    

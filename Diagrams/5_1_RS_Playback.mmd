@@ -1,0 +1,36 @@
+classDiagram
+    class RealsenseStreamConfiguration {
+        +int Width
+        +int Height
+        +int FPS
+        +bool EnableIR
+        +bool UseBag
+    }
+
+    class RGBDStream {
+        ~FrameDescription description
+        +GetDescription() : FrameDescription&
+        +WaitForFrames(int) : unique_ptr~Frameset~
+    }
+
+    class RGBDStreamGroup~T extends RGBDStream~ {
+        ~vector~FrameDescription~ descriptions
+        +GetDescription(int) : FrameDescription&
+        +GetStream(int) : T
+        +WaitForFrames(int) : vector~unique_ptr~Frameset~~
+        +WaitForSynchronizedFrames(int, double) : vector~unique_ptr~Frameset~~
+    }
+
+    class RealsenseStream {
+        ~string serial
+        ~unique_ptr~RS_Impl~ impl
+        +Stop()
+    }
+
+    class RealsenseStreamGroup {}
+    class RealsensePlaybackStreamGroup {}
+
+    RealsenseStream --> RGBDStream
+    RealsenseStreamGroup --> RGBDStreamGroup
+    RealsenseStreamGroup "1" *-- "1..*" RealsenseStream
+    RealsensePlaybackStreamGroup --> RealsenseStreamGroup

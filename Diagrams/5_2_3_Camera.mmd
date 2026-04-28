@@ -1,0 +1,16 @@
+classDiagram
+    class CameraState {
+        +const vec3 WorldUp
+        -vec3 position
+        -vec3 forward
+        -vec3 up
+        -vec3 right
+        -float yaw
+        -float pitch
+        -float movementSpeed
+        -float rotationSpeed
+        +PerspectiveMatrix() : mat4
+        +ViewMatrix() : mat4
+        +ProcessInput(int, float)
+        -CalculateVectors()
+    }

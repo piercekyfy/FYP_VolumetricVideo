@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Stream as RGBD Stream Group
+    participant System
+    participant Calib as Charuco Calibration
+
+    loop Valid Pairs < 20
+        System ->> Stream: WaitForFrames()
+        Stream ->> System: Frameset
+        System ->> Calib: Feed(Source Frame, Target Frame)
+    end
+    System ->> Calib: Calibrate
+    Calib ->> System: StereoCalibrationResult

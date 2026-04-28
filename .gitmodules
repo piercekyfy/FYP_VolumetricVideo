@@ -4,3 +4,6 @@
 [submodule "Renderer/lib/glfw"]
 	path = Renderer/lib/glfw
 	url = https://github.com/glfw/glfw
+[submodule "Renderer/lib/imgui"]
+	path = Renderer/lib/imgui
+	url = https://github.com/ocornut/imgui

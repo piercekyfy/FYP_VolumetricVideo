@@ -1,0 +1,30 @@
+classDiagram
+    class StereoPoseResult {
+        +bool Success
+        +Mat R
+        +Mat T
+        +Mat E
+        +Mat F
+        +double Error
+        +int SuccessfulSamples
+    }
+
+    class StereoCalibration {
+        -int boardWidth
+        -int boardHeight
+        -double cellSize
+        -int imageWidth
+        -int imageHeight
+        -vector~vector~Point3f~~ objPoints
+        -vector~vector~Point2f~~ imgPointsR
+        -vector~vector~Point2f~~ imgPointsL
+        -int sampleSize
+        +Process(Frame*, Frame*) : bool
+        +GetPose(Intrinsics, Intrinsics) : StereoPoseResult
+        +SampleSize() : int
+        -Feed(RGBData*, RGBData*) : bool
+        -Calibrate(Intrinsics, Intrinsics) : StereoPoseResult
+        -FindCheckerboard(Mat, vector~Point2f~) : bool
+        -GetIntrinsicsMat(Intrinsics) : Mat
+        -GetCoeffsMat(Intrinsics) : Mat
+    }

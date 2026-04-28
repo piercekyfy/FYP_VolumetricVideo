@@ -1,0 +1,48 @@
+classDiagram
+    class StreamType {
+        <<Enumeration>>
+        Color = 0,
+        Depth = 1,
+        IR = 2
+    }
+
+    class RGBData {
+        +Mat image
+        +width() : int
+        +height() : int
+    }
+
+    class DepthData {
+        +int width
+        +int height
+        +double scale
+
+        +GetData() : uint16_t*
+        +Size() : size_t
+        +Stride() : int 
+    }
+
+    class Frame {
+        +variant~unique_ptr~RGBData~, unique_ptr~DepthData~~ data
+        +double timestamp
+        +AsColor() : RGBData*
+        +AsDepth() : DepthData*
+        +GetDescription() : Stream
+    }
+
+    class Frameset {
+        -FrameDescription description
+        +AddColor(unique_ptr~RGBData~, Stream, double)
+        +AddIR(unique_ptr~RGBData~, Stream, double)
+        +AddDepth(unique_ptr~RGBData~, Stream, double)
+        +GetFirst(StreamType) : shared_ptr~Frame~
+        +Has(StreamType) : bool
+        +GetDescription() : FrameDescription
+        +Size() : size_t
+    }
+
+    Frame "1" *-- "0..1" RGBData
+    Frame "1" *-- "0..1" DepthData
+    note for Frame "Holds RGBData or DepthData."
+
+    Frameset "1" o-- "0..*" Frame
