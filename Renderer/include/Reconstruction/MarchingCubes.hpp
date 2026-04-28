@@ -359,81 +359,144 @@ MarchingCubes(const SparseVoxelGrid<VoxelBlockSize>& grid, float minWeight = 0.0
     std::vector<Point> vertices;
     std::vector<int>   indices;
 
-    // Iterate only over allocated blocks.
-    for (const auto& [blockCoordinate, block] : grid.blocks)
+    // Copy allocated block keys into a vector for OpenMP indices
+    std::vector<VoxelBlockCoordinate> blockKeys;
+    blockKeys.reserve(grid.blocks.size());
+    for (const auto& [key, _] : grid.blocks)
+        blockKeys.push_back(key);
+
+    #pragma omp parallel
     {
-        // Iterate every voxel in the block.
-        for (int lz = 0; lz < VoxelBlockSize; ++lz)
+
+        std::vector<Point> localVertices;
+        std::vector<int>   localIndices;
+
+        // Iterate only over allocated blocks.
+        #pragma omp for schedule(dynamic) // One block per thread
+        for (int b = 0; b < static_cast<int>(blockKeys.size()); ++b)
+        {
+            const VoxelBlockCoordinate& blockCoordinate = blockKeys[b];
+            const auto& block = grid.blocks.at(blockCoordinate);
+
+            // Hash look-ups are really expensive. This fetches all 27 of this block's neighbours.
+            // This is much better than each voxel performing eight hash lookups to find the corners closest to it.
+            const SparseVoxelGrid<VoxelBlockSize>::VoxelBlock* neighbours[3][3][3] = {};
+
+            for (int dz = -1; dz <= 1; dz++)
+            for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                VoxelBlockCoordinate neighbourCoord = {
+                    blockCoordinate.x + dx,
+                    blockCoordinate.y + dy,
+                    blockCoordinate.z + dz
+                };
+                auto it = grid.blocks.find(neighbourCoord);
+                neighbours[dz + 1][dy + 1][dx + 1] = (it != grid.blocks.end()) ? &it->second : nullptr;
+            }
+
+            // Iterate every voxel in the block.
+            for (int lz = 0; lz < VoxelBlockSize; ++lz)
             for (int ly = 0; ly < VoxelBlockSize; ++ly)
-                for (int lx = 0; lx < VoxelBlockSize; ++lx)
+            for (int lx = 0; lx < VoxelBlockSize; ++lx)
+            {
+                // World-space voxel position
+                glm::ivec3 voxelOrigin = {
+                    blockCoordinate.x * VoxelBlockSize + lx,
+                    blockCoordinate.y * VoxelBlockSize + ly,
+                    blockCoordinate.z * VoxelBlockSize + lz
+                };
+
+                // Samples all of this voxel's neighbours, its 'corners.'
+
+                VoxelVertex corners[8];
+
+                for (int i = 0; i < 8; ++i)
                 {
-                    // World-space voxel position
-                    glm::ivec3 voxelOrigin = {
-                        blockCoordinate.x * VoxelBlockSize + lx,
-                        blockCoordinate.y * VoxelBlockSize + ly,
-                        blockCoordinate.z * VoxelBlockSize + lz
-                    };
+                    glm::ivec3 coordinate = voxelOrigin + CornerOffset[i];
+                    
+                    const Voxel* cornerVoxel = nullptr;
 
-                    // Samples all of this voxel's neighbours, its 'corners.'
+                    // The location of the corner relative to the current block's origin.
+                    glm::ivec3 local = coordinate - glm::ivec3(blockCoordinate.x * VoxelBlockSize, blockCoordinate.y * VoxelBlockSize, blockCoordinate.z * VoxelBlockSize);
+                  
+                    int bx = local.x < 0 ? 0 : (local.x >= VoxelBlockSize ? 2 : 1); // local x -1 = index 0, x [0, block size] = index 2, x is block size = index 2
+                    int by = local.y < 0 ? 0 : (local.y >= VoxelBlockSize ? 2 : 1);
+                    int bz = local.z < 0 ? 0 : (local.z >= VoxelBlockSize ? 2 : 1);
 
-                    VoxelVertex corners[8];
+                    const auto* targetBlock = neighbours[bz][by][bx];
 
-                    for (int i = 0; i < 8; ++i)
-                    {
-                        glm::ivec3 coordinate = voxelOrigin + CornerOffset[i];
-
-                        const Voxel* cornerVoxel = grid.TryGetVoxel(coordinate);
-
-                        // World-space position of this corner's centre
-                        glm::vec3 centre = glm::vec3(coordinate) * grid.VoxelSize() + glm::vec3(0.5f * grid.VoxelSize());
-                        glm::vec3 color = cornerVoxel == nullptr ? glm::vec3(0.0f) : cornerVoxel->color;
-                        float distance = cornerVoxel == nullptr ? grid.TruncationDistance() : cornerVoxel->signedDistance;
-
-                        corners[i] = { centre, color, distance };
+                    if (targetBlock != nullptr) {
+                        // Remap local into target block's coordinate system
+                        glm::ivec3 localInBlock = {
+                            (local.x + VoxelBlockSize) % VoxelBlockSize,
+                            (local.y + VoxelBlockSize) % VoxelBlockSize,
+                            (local.z + VoxelBlockSize) % VoxelBlockSize
+                        };
+                        // and retrieve it directly from the block
+                        const Voxel& v = targetBlock->voxels[localInBlock.x][localInBlock.y][localInBlock.z];
+                        if (v.weight > 0.0f)
+                            cornerVoxel = &v;
                     }
 
-                    // Build cube index.
-                    int cubeIndex = 0;
-                    for (int i = 0; i < 8; ++i)
-                        if (corners[i].signedDistance < 0.0f)
-                            cubeIndex |= (1 << i);
+                    // World-space position of this corner's centre
+                    glm::vec3 centre = glm::vec3(coordinate) * grid.VoxelSize() + glm::vec3(0.5f * grid.VoxelSize());
+                    glm::vec3 color = cornerVoxel == nullptr ? glm::vec3(0.0f) : cornerVoxel->color;
+                    float distance = cornerVoxel == nullptr ? grid.TruncationDistance() : cornerVoxel->signedDistance;
 
-                    // Cube is completely inside or outside surface.
-                    if (EdgeTable[cubeIndex] == 0) continue;
-
-                    VoxelVertex edgeVertices[12];
-
-                    // Check if the surface crosses each edge, and calculate where.
-                    for (int edgeIndex = 0; edgeIndex < 12; ++edgeIndex)
-                    {
-                        if (!(EdgeTable[cubeIndex] & (1 << edgeIndex))) continue;
-
-                        int corner0 = EdgeCorners[edgeIndex][0];
-                        int corner1 = EdgeCorners[edgeIndex][1];
-
-                        edgeVertices[edgeIndex] = corners[corner0].Interpolate(corners[corner1]);
-                    }
-
-                    // Convert intersection points to triangles.
-                    for (int t = 0; TriTable[cubeIndex][t] != -1; t += 3)
-                    {
-                        VoxelVertex v0 = edgeVertices[TriTable[cubeIndex][t + 0]];
-                        VoxelVertex v1 = edgeVertices[TriTable[cubeIndex][t + 1]];
-                        VoxelVertex v2 = edgeVertices[TriTable[cubeIndex][t + 2]];
-
-                        // Compute face normal (unused currently)
-                        glm::vec3 normal = glm::normalize(glm::cross(v1.position - v0.position, v2.position - v0.position));
-                        int index = static_cast<int>(vertices.size());
-
-                        vertices.push_back({ v0.position, v0.color });
-                        vertices.push_back({ v1.position, v1.color });
-                        vertices.push_back({ v2.position, v2.color });
-
-                        indices.push_back(index + 0);
-                        indices.push_back(index + 1);
-                        indices.push_back(index + 2);
-                    }
+                    corners[i] = { centre, color, distance };
                 }
+
+                // Build cube index.
+                int cubeIndex = 0;
+                for (int i = 0; i < 8; ++i)
+                    if (corners[i].signedDistance < 0.0f)
+                        cubeIndex |= (1 << i);
+
+                // Cube is completely inside or outside surface.
+                if (EdgeTable[cubeIndex] == 0) continue;
+
+                VoxelVertex edgeVertices[12];
+
+                // Check if the surface crosses each edge, and calculate where.
+                for (int edgeIndex = 0; edgeIndex < 12; ++edgeIndex)
+                {
+                    if (!(EdgeTable[cubeIndex] & (1 << edgeIndex))) continue;
+
+                    int corner0 = EdgeCorners[edgeIndex][0];
+                    int corner1 = EdgeCorners[edgeIndex][1];
+
+                    edgeVertices[edgeIndex] = corners[corner0].Interpolate(corners[corner1]);
+                }
+
+                // Convert intersection points to triangles.
+                for (int t = 0; TriTable[cubeIndex][t] != -1; t += 3)
+                {
+                    VoxelVertex v0 = edgeVertices[TriTable[cubeIndex][t + 0]];
+                    VoxelVertex v1 = edgeVertices[TriTable[cubeIndex][t + 1]];
+                    VoxelVertex v2 = edgeVertices[TriTable[cubeIndex][t + 2]];
+
+                    // Compute face normal (unused currently)
+                    glm::vec3 normal = glm::normalize(glm::cross(v1.position - v0.position, v2.position - v0.position));
+                    int index = static_cast<int>(localVertices.size());
+                    localVertices.push_back({ v0.position, v0.color });
+                    localVertices.push_back({ v1.position, v1.color });
+                    localVertices.push_back({ v2.position, v2.color });
+                    localIndices.push_back(index + 0);
+                    localIndices.push_back(index + 1);
+                    localIndices.push_back(index + 2);
+                }
+            }
+        }
+
+        // Merge all threat results into the main array, then return it. omp critical locks, so only one thread writes at a time.
+#pragma omp critical 
+        {
+            int offset = static_cast<int>(vertices.size());
+            for (int i : localIndices)
+                indices.push_back(i + offset);
+            vertices.insert(vertices.end(), localVertices.begin(), localVertices.end());
+        }
     }
 
     return { vertices, indices };

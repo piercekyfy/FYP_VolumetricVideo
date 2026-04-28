@@ -3,6 +3,7 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/type_ptr.hpp"
+#include <chrono>
 
 #include "Eigen/Core"
 #include "Eigen/Dense"
@@ -175,20 +176,51 @@ struct PCState {
 	RenderedPoints RenderSource0;
 	RenderedPoints RenderSource1;
 
-	void Update(Frameset* fs0, glm::mat4 t0, Frameset* fs1, glm::mat4 t1) {
+	std::mutex Lock;
+	std::atomic<bool> IsProcessing{ false };
+	std::atomic<bool> Source0Ready{ false };
+	std::atomic<bool> Source1Ready{ false };
+
+	std::shared_ptr<Frame> WaitingImage0Frame;
+	std::shared_ptr<Frame> WaitingImage1Frame;
+
+	void UpdateAsync(Frameset* fs0, glm::mat4 t0, Frameset* fs1, glm::mat4 t1) {
+		std::lock_guard<std::mutex> lock(Lock);
 
 		if (fs0) {
-			Texture0.Set(fs0->GetFirst(StreamType::Color)->AsColor()->image);
 			Source0.Translation = t0;
 			Source0.Process(fs0);
-			RenderSource0.Update(Source0.Points());
+			WaitingImage0Frame = fs0->GetFirst(StreamType::Color);
+			Source0Ready = true;
 		}
 
 		if (fs1) {
-			Texture1.Set(fs1->GetFirst(StreamType::Color)->AsColor()->image);
+			WaitingImage1Frame = fs1->GetFirst(StreamType::Color);
 			Source1.Translation = t1;
 			Source1.Process(fs1);
+			Source1Ready = true;
+		}
+
+		IsProcessing = false;
+	}
+
+	void Update0Render() {
+		std::lock_guard<std::mutex> lock(Lock);
+		if (Source0Ready) {
+			Texture0.Set(WaitingImage0Frame->AsColor()->image);
+			WaitingImage0Frame = nullptr;
+			RenderSource0.Update(Source0.Points());
+			Source0Ready = false;
+		}
+	}
+
+	void Update1Render() {
+		std::lock_guard<std::mutex> lock(Lock);
+		if (Source1Ready) {
+			Texture1.Set(WaitingImage1Frame->AsColor()->image);
+			WaitingImage1Frame = nullptr;
 			RenderSource1.Update(Source1.Points());
+			Source1Ready = false;
 		}
 	}
 };
@@ -197,7 +229,14 @@ struct VoxelState {
 	std::unique_ptr<SparseVoxelGrid<8>> Grid;
 	RenderedMesh RenderSource;
 
-	void Update(Frameset* fs0, glm::mat4 t0, Frameset* fs1, glm::mat4 t1) {
+	std::mutex MeshLock; 
+	std::atomic<bool> IsProcessing{ false };
+	std::atomic<bool> MeshReady{ false };
+
+	std::vector<Point> WaitingPoints;
+	std::vector<int> WaitingIndices;
+
+	void UpdateAsync(Frameset* fs0, glm::mat4 t0, Frameset* fs1, glm::mat4 t1) {
 		if (Grid == nullptr)
 			return;
 
@@ -214,9 +253,28 @@ struct VoxelState {
 		}
 
 		if (fs0 || fs1) {
+			
 			auto [points, indices] = MarchingCubes(*Grid);
-			RenderSource.Update(points, indices);
+			{
+				std::lock_guard<std::mutex> lock(MeshLock);
+				WaitingPoints = std::move(points);
+				WaitingIndices = std::move(indices);
+				MeshReady = true;
+			}
 		}
+
+		IsProcessing = false;
+	}
+
+	void Draw() {
+		std::lock_guard<std::mutex> lock(MeshLock);
+		if (MeshReady) {
+			RenderSource.Update(WaitingPoints, WaitingIndices);
+			MeshReady = false;
+		}
+
+		
+		RenderSource.Draw();
 	}
 };
 
@@ -436,6 +494,8 @@ int main() {
 
 	double lastTime = glfwGetTime();
 	double accumDelta = 0.0;
+	double targetFPS = 30;
+	double targetFrameTime = 1.0 / targetFPS;
 
 	AppState appState{};
 	std::unique_ptr<RGBDStream::RGBDStreamGroup<RGBDStream::RealsenseStream>> ActivateStreamGroup;
@@ -517,16 +577,19 @@ int main() {
 		}
 
 		if (ActivateStreamGroup != nullptr && (!appState.PauseMode || (appState.PauseMode && appState.NextRequested))) {
-			auto fss = ActivateStreamGroup->WaitForSynchronizedFrames(0);
+			if (accumDelta >= targetFrameTime || appState.NextRequested) {
+				accumDelta = 0.0;
+				auto fss = ActivateStreamGroup->WaitForSynchronizedFrames(0);
 
-			if (fss[0] != nullptr || fss[1] != nullptr)
-				appState.NextRequested = false;
+				if (fss[0] != nullptr || fss[1] != nullptr)
+					appState.NextRequested = false;
 
-			if (fss[0] != nullptr) {
-				fsSource0 = std::move(fss[0]);
-			}
-			if (fss[1] != nullptr) {
-				fsSource1 = std::move(fss[1]);
+				if (fss[0] != nullptr) {
+					fsSource0 = std::move(fss[0]);
+				}
+				if (fss[1] != nullptr) {
+					fsSource1 = std::move(fss[1]);
+				}
 			}
 		}
 
@@ -534,24 +597,55 @@ int main() {
 		case AppState::RenderMode::PC_BOTH:
 		case AppState::RenderMode::PC_1:
 		case AppState::RenderMode::PC_0:
+		{
 			glPointSize(appState.PointSize);
 			if (pcState == nullptr) {
 				pcState = std::make_unique<PCState>();
 			}
-			pcState->Update(fsSource0.get(), appState.CalibratedTransform, fsSource1.get(), glm::mat4{1.0f});
-			break;
-		case AppState::RenderMode::MESH:
-			if (voxelState == nullptr || appState.VoxelReloadRequested) {
-				voxelState = std::make_unique<VoxelState>();
-				voxelState->Grid = std::make_unique<SparseVoxelGrid<8>>(appState.VoxelSize, appState.TSDFTruncation);
-				appState.VoxelReloadRequested = false;
+
+			if (!pcState->IsProcessing && (fsSource0 != nullptr || fsSource1 != nullptr)) {
+				auto fs0 = std::move(fsSource0);
+				auto fs1 = std::move(fsSource1);
+				pcState->IsProcessing = true;
+
+				auto t0 = appState.CalibratedTransform;
+				auto t1 = glm::mat4{ 1.0f };
+
+
+				std::thread([&pcState, fs0 = std::move(fs0), fs1 = std::move(fs1), t0, t1]() mutable {
+					pcState->UpdateAsync(fs0.get(), t0, fs1.get(), t1);
+					}).detach();
 			}
-			voxelState->Update(fsSource0.get(), appState.CalibratedTransform, fsSource1.get(), glm::mat4{ 1.0f });
 			break;
 		}
+		case AppState::RenderMode::MESH:
+		{
+			if (voxelState == nullptr || appState.VoxelReloadRequested) {
+				if (voxelState == nullptr || !voxelState->IsProcessing) {
+					voxelState = std::make_unique<VoxelState>();
+					voxelState->Grid = std::make_unique<SparseVoxelGrid<8>>(appState.VoxelSize, appState.TSDFTruncation);
+					appState.VoxelReloadRequested = false;
+				}
+			}
 
-		fsSource0 = nullptr;
-		fsSource1 = nullptr;
+			if (!voxelState->IsProcessing && (fsSource0 != nullptr || fsSource1 != nullptr)) {
+				auto fs0 = std::move(fsSource0);
+				auto fs1 = std::move(fsSource1);
+				voxelState->IsProcessing = true;
+
+				VoxelState* currentVoxelState = voxelState.get();
+
+				auto t0 = appState.CalibratedTransform;
+				auto t1 = glm::mat4{ 1.0f };
+
+				std::thread([currentVoxelState, fs0 = std::move(fs0), fs1 = std::move(fs1), t0, t1]() mutable {
+					currentVoxelState->UpdateAsync(fs0.get(), t0, fs1.get(), t1);
+					}).detach();
+			}
+
+			break;
+		}
+		}
 
 		glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -567,6 +661,9 @@ int main() {
 			case AppState::RenderMode::PC_BOTH:
 				if (pcState == nullptr)
 					break;
+				pcState->Update0Render();
+				pcState->Update1Render();
+
 				pcShader.use();
 				pcState->Texture0.Bind(0);
 				pcShader.setMatrix("mvp", GL_FALSE, glm::value_ptr(cameraState.PerspectiveMatrix() * cameraState.ViewMatrix() * pcState->Source0.Translation));
@@ -578,6 +675,9 @@ int main() {
 			case AppState::RenderMode::PC_0:
 				if (pcState == nullptr)
 					break;
+
+				pcState->Update0Render();
+
 				pcShader.use();
 				pcState->Texture0.Bind(0);
 				pcShader.setMatrix("mvp", GL_FALSE, glm::value_ptr(cameraState.PerspectiveMatrix() * cameraState.ViewMatrix() * pcState->Source0.Translation));
@@ -586,6 +686,9 @@ int main() {
 			case AppState::RenderMode::PC_1:
 				if (pcState == nullptr)
 					break;
+
+				pcState->Update1Render();
+
 				pcShader.use();
 				pcState->Texture1.Bind(0);
 				pcShader.setMatrix("mvp", GL_FALSE, glm::value_ptr(cameraState.PerspectiveMatrix() * cameraState.ViewMatrix() * pcState->Source1.Translation));
@@ -596,7 +699,7 @@ int main() {
 					break;
 				meshShader.use();
 				meshShader.setMatrix("mvp", GL_FALSE, glm::value_ptr(cameraState.PerspectiveMatrix() * cameraState.ViewMatrix()));
-				voxelState->RenderSource.Draw();
+				voxelState->Draw();
 				break;
 		}
 
@@ -605,6 +708,12 @@ int main() {
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 	};
+
+	if (voxelState != nullptr) {
+		while (voxelState->IsProcessing) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(10));
+		}
+	}
 
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();

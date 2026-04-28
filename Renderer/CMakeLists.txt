@@ -6,6 +6,11 @@ if (POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
+if(MSVC)
+    set(OpenMP_CXX_FLAGS "/openmp")
+    set(OpenMP_CXX_LIB_NAMES "")
+endif()
+
 if(WIN32)
     set(USER_HOME "$ENV{USERPROFILE}")
 else()
@@ -18,8 +23,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(FetchContent)
 include(ExternalProject)
-
-
 
 project (Renderer)
 
@@ -43,6 +46,10 @@ if(realsense2_DIR)
 		INTERFACE_INCLUDE_DIRECTORIES "${realsense2_DIR}/include"
 	)
 endif()
+
+# OpenMP (Parallelization)
+
+find_package(OpenMP REQUIRED)
 
 # deps and scripts
 

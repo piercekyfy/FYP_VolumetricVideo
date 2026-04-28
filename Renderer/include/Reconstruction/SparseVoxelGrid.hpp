@@ -121,6 +121,20 @@ public:
 		);
 	}
 
+	Voxel* TryGetVoxel(const glm::ivec3& voxelPosition)
+	{
+		glm::ivec3 localPosition;
+		VoxelBlockCoordinate blockCoordinate = GetVoxelBlock(voxelPosition, localPosition);
+
+		auto it = blocks.find(blockCoordinate);
+		if (it == blocks.end()) return nullptr;
+
+		Voxel& voxel = it->second.voxels[localPosition.x][localPosition.y][localPosition.z];
+		if (voxel.weight <= 0.0f) return nullptr;
+
+		return &voxel;
+	}
+
 	const Voxel* TryGetVoxel(const glm::ivec3& voxelPosition) const
 	{
 		glm::ivec3 localPosition;
@@ -133,6 +147,10 @@ public:
 		if (voxel.weight <= 0.0f) return nullptr;
 
 		return &voxel;
+	}
+
+	void Allocate(const VoxelBlockCoordinate& coordinate) {
+		blocks.try_emplace(coordinate);
 	}
 
 	float TruncationDistance() const {
@@ -163,6 +181,33 @@ void Integrate(SparseVoxelGrid<VoxelBlockSize>& grid, Frameset* frameset, const 
 	const DepthData* depthData = depthFrame->AsDepth();
 	Intrinsics depthIntr = depthFrame->GetDescription().intrinsics;
 
+	for (int v = 0; v < depthData->height; v++)
+	for (int u = 0; u < depthData->width; u++) {
+		int index = v * depthData->width + u;
+		float depth = static_cast<float>(depthData->GetData()[index] * depthScale);
+		if (depth <= 0)
+			continue;
+
+		glm::vec3 rayDirection = glm::normalize(glm::vec3{
+			(u - depthIntr.ppx) / depthIntr.fx,
+			-(v - depthIntr.ppy) / depthIntr.fy,
+			1.0f
+		});
+
+		float zStart = std::max(depth - grid.TruncationDistance(), grid.VoxelSize()); // Only march in the truncation band.
+		float zEnd = depth + grid.TruncationDistance();
+
+		for (float z = zStart; z <= zEnd; z += grid.VoxelSize()) {
+			glm::vec3 cameraPosition = rayDirection * (z / rayDirection.z);
+			glm::vec3 worldPosition = glm::vec3(transform * glm::vec4(cameraPosition, 1.0f));
+			glm::ivec3 voxelPos = grid.GetVoxelPosition(worldPosition);
+			glm::ivec3 localPos;
+			VoxelBlockCoordinate blockCoordinate = grid.GetVoxelBlock(voxelPos, localPos);
+			grid.Allocate(blockCoordinate);
+		}
+	}
+
+#pragma omp parallel for schedule(dynamic, 4)
 	for (int v = 0; v < depthData->height; v++) {
 		for (int u = 0; u < depthData->width; u++) {
 			int index = v * depthData->width + u;
@@ -184,15 +229,26 @@ void Integrate(SparseVoxelGrid<VoxelBlockSize>& grid, Frameset* frameset, const 
 			int colorU = static_cast<int>((float)u / depthIntr.width * colorImage.cols);
 			int colorV = static_cast<int>((float)v / depthIntr.height * colorImage.rows);
 			cv::Vec3b rgb = colorImage.at<cv::Vec3b>(colorV, colorU);
-			glm::vec3 color{ rgb[0] / 255.0f, rgb[1] / 255.0f, rgb[2] / 255.0f };//rgb[2] / 255.0f, rgb[1] / 255.0f, rgb[0] / 255.0f };
+			glm::vec3 color{ rgb[0] / 255.0f, rgb[1] / 255.0f, rgb[2] / 255.0f };
+
+			typename SparseVoxelGrid<VoxelBlockSize>::VoxelBlock* cachedBlock = nullptr;
+			VoxelBlockCoordinate cachedBlockCoordinate{ INT_MIN, INT_MIN, INT_MIN };
 
 			for (float z = zStart; z <= zEnd; z += grid.VoxelSize()) { // update voxels as we pass the ray
 				glm::vec3 cameraPosition = rayDirection * (z / rayDirection.z);
 				glm::vec3 worldPosition = glm::vec3(transform * glm::vec4(cameraPosition, 1.0f));
+				glm::ivec3 voxelPos = grid.GetVoxelPosition(worldPosition);
+				glm::ivec3 localPos;
+				VoxelBlockCoordinate blockCoordinate = grid.GetVoxelBlock(voxelPos, localPos);
+				
+				if (!(blockCoordinate == cachedBlockCoordinate)) {
+					cachedBlock = &grid.blocks[blockCoordinate];
+					cachedBlockCoordinate = blockCoordinate;
+				}
 
 				float sdf = std::clamp(depth - z, -grid.TruncationDistance(), grid.TruncationDistance());
 
-				Voxel& voxel = grid.GetVoxel(worldPosition);
+				Voxel& voxel = cachedBlock->voxels[localPos.x][localPos.y][localPos.z];
 
 				// Blend new voxel values:
 				voxel.signedDistance = (voxel.weight * voxel.signedDistance + weight * sdf) / (voxel.weight + weight);
