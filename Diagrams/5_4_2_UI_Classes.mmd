@@ -1,0 +1,70 @@
+classDiagram
+
+    class RenderMode {
+        <<Enumeration>>
+        MESH
+        PC_0
+        PC_1
+        PC_BOTH
+    }
+
+    class AppState {
+        +bool UseBag
+        +char[512] Source0BagCalibPath
+        +char[512] Source1BagCalibPath
+        +char[512] Source0BagPath
+        +char[512] Source1BagPath
+        +char[512] source0Serial
+        +char[512] source1Serial
+        
+        +bool CalibrationRequested
+        +bool ICPCalibratioNRequested
+        +bool ICPRefined
+        +float LastCalibrationError
+        +float LastICPCalibrationError
+        +mat4 CalibratedTransform
+
+        +RenderMode RenderMode
+        +bool WireFrame
+        +bool VoxelGrid
+        +float PointSize
+        +float TSDFTruncation
+        +float VoxelSize
+        +bool VoxelReloadRequested
+
+        +bool PauseMode
+        +bool NextRequested
+    }
+
+    class PCState {
+        +Pointcloud Source0
+        +Pointcloud Source1
+        +RenderTexture Texture0
+        +RenderTexture Texture1
+        +RenderedPoints RenderSource0
+        +RenderedPoints RenderSource1
+
+        +atomic~bool~ IsProcessing
+        +atomic~bool~ Source0Ready
+        +atomic~bool~ Source1Ready
+        -mutex Lock
+        -shared_ptr~Frame~ WaitingImage0Frame
+        -shared_ptr~Frame~ WaitingImage1Frame
+        +UpdateAsync(Frameset*, mat4, Frameset*, mat4)
+        +Update0Render()
+        +Update1Render()
+    }
+
+    class VoxelState {
+        +unique_ptr~SparseVoxelGrid~8~~ Grid
+        +RenderedMesh RenderSource
+        +atomic~bool~ IsProcessing
+        +atomic~bool~ MeshReady
+        
+        -mutex MeshLock
+        -vector~Point~ WaitingPoints
+        -vector~int~ WaitingIndices
+
+        +UpdateAsync(Frameset*, mat4, Frameset*, mat4)
+        +Draw()
+    }

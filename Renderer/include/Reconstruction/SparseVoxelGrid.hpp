@@ -258,3 +258,32 @@ void Integrate(SparseVoxelGrid<VoxelBlockSize>& grid, Frameset* frameset, const 
 		}
 	}
 }
+
+std::vector<Point> GenerateVoxelGridLines(const SparseVoxelGrid<8>& grid) {
+	std::vector<Point> lines;
+
+	for (auto& [coord, block] : grid.blocks) {
+		for (int x = 0; x < 8; x++)
+			for (int y = 0; y < 8; y++)
+				for (int z = 0; z < 8; z++) {
+					const Voxel& v = block.voxels[x][y][z];
+					if (v.weight <= 0.0f) continue;
+
+					glm::vec3 origin = {
+						(coord.x * 8 + x) * grid.VoxelSize(),
+						(coord.y * 8 + y) * grid.VoxelSize(),
+						(coord.z * 8 + z) * grid.VoxelSize()
+					};
+
+					auto addEdge = [&](glm::vec3 a, glm::vec3 b) {
+						lines.push_back({ origin + a, { 1,1,0 } });
+						lines.push_back({ origin + b, { 1,1,0 } });
+						};
+					glm::vec3 X{ grid.VoxelSize(),0,0 }, Y{ 0,grid.VoxelSize(),0 }, Z{ 0,0,grid.VoxelSize() };
+					addEdge({ 0,0,0 }, X); addEdge(Y, Y + X); addEdge(Z, Z + X); addEdge(Y + Z, Y + Z + X);
+					addEdge({ 0,0,0 }, Y); addEdge(X, X + Y); addEdge(Z, Z + Y); addEdge(X + Z, X + Z + Y);
+					addEdge({ 0,0,0 }, Z); addEdge(X, X + Z); addEdge(Y, Y + Z); addEdge(X + Y, X + Y + Z);
+				}
+	}
+	return lines;
+}

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+
 #include "glm/glm.hpp"
 
 #include "Eigen/Core";
@@ -148,5 +150,7 @@ ICPCalibrationResult icp(Pointcloud& sourcePC, Pointcloud& targetPC, Eigen::Isom
 	size_t num_inliers = result.num_inliers;       // Number of inlier source points
 	Eigen::Matrix<double, 6, 6> H = result.H;      // Final Hessian matrix (6x6)
 
-	return { result.converged, result.T_target_source, result.error };
+	double rmse = std::sqrt(result.error / num_inliers);
+
+	return { result.converged, result.T_target_source, rmse };
 }

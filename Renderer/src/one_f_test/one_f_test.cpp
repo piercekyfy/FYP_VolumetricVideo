@@ -1,4 +1,6 @@
 #include <iostream>
+#include <chrono>
+#include <cmath>
 
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
@@ -22,6 +24,8 @@
 #include "Reconstruction/SparseVoxelGrid.hpp"
 #include "Reconstruction/MarchingCubes.hpp"
 #include "Reconstruction/RenderedMesh.hpp"
+#include "Reconstruction/RenderedVoxelGrid.hpp"
+
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
@@ -228,6 +232,7 @@ struct PCState {
 struct VoxelState {
 	std::unique_ptr<SparseVoxelGrid<8>> Grid;
 	RenderedMesh RenderSource;
+	RenderedVoxelGrid RenderDebugGrid;
 
 	std::mutex MeshLock; 
 	std::atomic<bool> IsProcessing{ false };
@@ -235,6 +240,10 @@ struct VoxelState {
 
 	std::vector<Point> WaitingPoints;
 	std::vector<int> WaitingIndices;
+	std::vector<Point> DebugGridPoints;
+
+	std::atomic<bool>  DebugGridWaiting = false;
+	bool UploadedDebugGrid = false;
 
 	void UpdateAsync(Frameset* fs0, glm::mat4 t0, Frameset* fs1, glm::mat4 t1) {
 		if (Grid == nullptr)
@@ -244,6 +253,8 @@ struct VoxelState {
 			Grid->Clear();
 		}
 
+		auto start = std::chrono::high_resolution_clock::now();
+
 		if (fs0) {
 			Integrate(*Grid, fs0, t0);
 		}
@@ -251,6 +262,12 @@ struct VoxelState {
 		if (fs1) {
 			Integrate(*Grid, fs1, t1);
 		}
+
+		auto end = std::chrono::high_resolution_clock::now();
+		double ms = std::chrono::duration<double, std::milli>(end - start).count();
+		std::cout << "TSDF Integration Time: " << ms << '\n';
+
+		start = std::chrono::high_resolution_clock::now();
 
 		if (fs0 || fs1) {
 			
@@ -263,18 +280,34 @@ struct VoxelState {
 			}
 		}
 
+		end = std::chrono::high_resolution_clock::now();
+		std::cout << "Marching Cubes Time: " << ms << '\n';
+
+		if (!UploadedDebugGrid && !DebugGridWaiting) {
+			DebugGridPoints = GenerateVoxelGridLines(*this->Grid);
+			DebugGridWaiting = true;
+		}
+
 		IsProcessing = false;
 	}
 
-	void Draw() {
+	void Draw(bool debug = false) {
 		std::lock_guard<std::mutex> lock(MeshLock);
 		if (MeshReady) {
 			RenderSource.Update(WaitingPoints, WaitingIndices);
 			MeshReady = false;
 		}
 
-		
 		RenderSource.Draw();
+
+		if (debug) {
+			if (!UploadedDebugGrid && DebugGridWaiting) {
+				RenderDebugGrid.Update(DebugGridPoints);
+				UploadedDebugGrid = true;
+			}
+
+			RenderDebugGrid.Draw();
+		}
 	}
 };
 
@@ -699,7 +732,7 @@ int main() {
 					break;
 				meshShader.use();
 				meshShader.setMatrix("mvp", GL_FALSE, glm::value_ptr(cameraState.PerspectiveMatrix() * cameraState.ViewMatrix()));
-				voxelState->Draw();
+				voxelState->Draw(appState.VoxelGrid);
 				break;
 		}
 
